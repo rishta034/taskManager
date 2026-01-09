@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Trash - Task Manager</title>
+    <title>Critical Tasks - Task Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
@@ -31,14 +31,16 @@
                     <span>Employees</span>
                 </a>
                 @endif
-                <a href="{{ route('critical-tasks.index') }}" class="menu-item">
+                <a href="{{ route('critical-tasks.index') }}" class="menu-item active">
                     <i class="fas fa-exclamation-triangle"></i>
                     <span>Critical Tasks</span>
                 </a>
-                <a href="{{ route('trash.index') }}" class="menu-item active">
+                @if(auth()->user()->isSuperAdmin())
+                <a href="{{ route('trash.index') }}" class="menu-item">
                     <i class="fas fa-trash"></i>
                     <span>Trash</span>
                 </a>
+                @endif
             </nav>
         </aside>
 
@@ -60,12 +62,9 @@
         <main class="main-content">
             <div class="header">
                 <h1>
-                    <i class="fas fa-trash"></i>
-                    Trash
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Critical Tasks
                 </h1>
-                <p style="color: var(--text-secondary); margin-top: 8px; font-size: 14px;">
-                    Deleted tasks are moved here. Only Super Admin can restore or permanently delete tasks.
-                </p>
             </div>
 
 
@@ -79,13 +78,15 @@
                             <th>Status</th>
                             <th>Priority</th>
                             <th>Organization</th>
-                            <th>Deleted Date</th>
+                            <th>Due Date</th>
+                            <th>Assign To</th>
+                            <th>Assign By</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($tasks as $task)
-                        <tr>
+                        <tr onclick="showTaskTimeline({{ $task->id }})" style="cursor: pointer;">
                             <td>
                                 <div class="task-title">{{ $task->title }}</div>
                                 @if($task->description)
@@ -110,28 +111,35 @@
                                 @endif
                             </td>
                             <td>
-                                {{ $task->deleted_at->format('M d, Y h:i A') }}
+                                @if($task->due_date)
+                                    {{ $task->due_date->format('M d, Y') }}
+                                @else
+                                    <span style="color: #94a3b8;">No due date</span>
+                                @endif
                             </td>
                             <td>
-                                @if(auth()->user()->isSuperAdmin())
-                                <div class="task-actions" style="display: flex; gap: 8px;">
-                                    <form action="{{ route('trash.restore', $task->id) }}" method="POST" style="display: inline;" class="restore-form">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm" onclick="event.preventDefault(); confirmRestore(this);" style="background: #d1fae5; color: #065f46;" title="Restore">
-                                            <i class="fas fa-undo"></i>
-                                        </button>
-                                    </form>
-                                    <form action="{{ route('trash.force-delete', $task->id) }}" method="POST" style="display: inline;" class="force-delete-form">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-danger" onclick="event.preventDefault(); confirmForceDelete(this);" title="Permanently Delete">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </button>
-                                    </form>
-                                </div>
+                                @if($task->employee)
+                                    <span class="assigned-employee" data-department="{{ $task->employee->department->name ?? 'No Department' }}">
+                                        {{ $task->employee->full_name }}
+                                    </span>
                                 @else
-                                <span style="color: #94a3b8; font-size: 12px;">No actions</span>
+                                    <span style="color: #94a3b8;">-</span>
                                 @endif
+                            </td>
+                            <td>
+                                @if($task->assignedBy)
+                                    <span style="color: #475569; font-weight: 500;">{{ $task->assignedBy->name }}</span>
+                                @else
+                                    <span style="color: #94a3b8;">-</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="task-actions" onclick="event.stopPropagation();" style="display: flex; gap: 6px; align-items: center;">
+                                    <button class="btn btn-sm critical-task-btn" onclick="toggleCriticalTask({{ $task->id }})" 
+                                            style="background: #fee2e2; color: #dc2626;" title="Remove from Critical Tasks">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         @endforeach
@@ -145,9 +153,9 @@
                 @endif
                 @else
                 <div class="empty-state">
-                    <i class="fas fa-trash"></i>
-                    <h3>Trash is empty</h3>
-                    <p>Deleted tasks will appear here</p>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>No critical tasks</h3>
+                    <p>Mark tasks as critical to see them here</p>
                 </div>
                 @endif
             </div>
@@ -159,44 +167,27 @@
             document.querySelector('.sidebar').classList.toggle('active');
         }
 
-        // SweetAlert2 Functions
-        function confirmForceDelete(button) {
-            const form = button.closest('form');
-            Swal.fire({
-                title: 'Are you sure?',
-                text: "This will permanently delete the task. This action cannot be undone!",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#ef4444',
-                cancelButtonColor: '#6b7280',
-                confirmButtonText: 'Yes, delete permanently!',
-                cancelButtonText: 'Cancel',
-                dangerMode: true
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    form.submit();
+        function toggleCriticalTask(taskId) {
+            fetch(`/critical-tasks/${taskId}/toggle`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
                 }
-            });
+            })
+            .then(response => response.json())
+            .then(data => {
+                window.location.reload();
+            })
+            .catch(error => console.error('Critical task error:', error));
         }
 
-        function confirmRestore(button) {
-            const form = button.closest('form');
-            Swal.fire({
-                title: 'Restore Task?',
-                text: "This task will be restored and moved back to active tasks.",
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#10b981',
-                cancelButtonColor: '#6b7280',
-                confirmButtonText: 'Yes, restore it!',
-                cancelButtonText: 'Cancel'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    form.submit();
-                }
-            });
+        function showTaskTimeline(taskId) {
+            window.location.href = `/dashboard?task_id=${taskId}`;
         }
-
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
         // Show success message from session
         @if(session('success'))
         Swal.fire({
@@ -225,7 +216,5 @@
         });
         @endif
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </body>
 </html>
-

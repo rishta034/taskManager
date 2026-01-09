@@ -17,6 +17,7 @@ class OrganizationSeeder extends Seeder
         $organizations = [
             ['name' => 'FAMEUS MEDIA'],
             ['name' => 'THE SCHOOL AGENCY'],
+            ['name' => 'Fameus Decor'],
         ];
 
         foreach ($organizations as $org) {

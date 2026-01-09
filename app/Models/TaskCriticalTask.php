@@ -5,9 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class TaskBookmark extends Model
+class TaskCriticalTask extends Model
 {
     use HasFactory;
+
+    protected $table = 'task_critical_tasks';
 
     protected $fillable = [
         'user_id',

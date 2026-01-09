@@ -19,6 +19,7 @@ class Task extends Model
         'user_id',
         'organization_id',
         'employee_id',
+        'assigned_by',
         'visible_to_admin',
     ];
 
@@ -42,14 +43,19 @@ class Task extends Model
         return $this->belongsTo(Employee::class, 'employee_id');
     }
 
-    public function bookmarks()
+    public function assignedBy()
     {
-        return $this->hasMany(TaskBookmark::class);
+        return $this->belongsTo(User::class, 'assigned_by');
     }
 
-    public function isBookmarkedBy($userId)
+    public function criticalTasks()
     {
-        return $this->bookmarks()->where('user_id', $userId)->exists();
+        return $this->hasMany(TaskCriticalTask::class, 'task_id');
+    }
+
+    public function isCriticalBy($userId)
+    {
+        return $this->criticalTasks()->where('user_id', $userId)->exists();
     }
 
     public function workSessions()

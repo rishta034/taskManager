@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmployeeController;
-use App\Http\Controllers\BookmarkController;
+use App\Http\Controllers\CriticalTaskController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\TrashController;
 use App\Http\Controllers\SearchController;
@@ -49,14 +49,21 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tasks/{task}/work/start', [TaskController::class, 'startWork'])->name('tasks.work.start');
     Route::post('/tasks/{task}/work/pause', [TaskController::class, 'pauseWork'])->name('tasks.work.pause');
     Route::get('/tasks/{task}/work/status', [TaskController::class, 'getWorkStatus'])->name('tasks.work.status');
+    Route::get('/dashboard/stats', [TaskController::class, 'getStats'])->name('dashboard.stats');
+    Route::get('/organization/{organizationId}/stats', [TaskController::class, 'getOrganizationStats'])->name('organization.stats');
     
     // Employee Routes - Admin and Super Admin only (access controlled in EmployeeController)
     Route::resource('employees', EmployeeController::class);
     
-    // Bookmarks
-    Route::get('/bookmarks', [BookmarkController::class, 'index'])->name('bookmarks.index');
-    Route::get('/bookmarks/count', [BookmarkController::class, 'count'])->name('bookmarks.count');
-    Route::post('/bookmarks/{task}/toggle', [BookmarkController::class, 'toggle'])->name('bookmarks.toggle');
+    // Critical Tasks
+    Route::get('/critical-tasks', [CriticalTaskController::class, 'index'])->name('critical-tasks.index');
+    Route::get('/critical-tasks/count', [CriticalTaskController::class, 'count'])->name('critical-tasks.count');
+    Route::post('/critical-tasks/{task}/toggle', [CriticalTaskController::class, 'toggle'])->name('critical-tasks.toggle');
+    
+    // Complete Task
+    Route::post('/tasks/{task}/complete', [TaskController::class, 'completeTask'])->name('tasks.complete');
+    // Incomplete Task (Admin and Super Admin only)
+    Route::post('/tasks/{task}/incomplete', [TaskController::class, 'incompleteTask'])->name('tasks.incomplete');
     
     // Trash
     Route::get('/trash', [TrashController::class, 'index'])->name('trash.index');

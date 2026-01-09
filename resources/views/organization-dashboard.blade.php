@@ -31,9 +31,9 @@
                     <span>Employees</span>
                 </a>
                 @endif
-                <a href="{{ route('bookmarks.index') }}" class="menu-item {{ request()->routeIs('bookmarks.*') ? 'active' : '' }}">
-                    <i class="fas fa-bookmark"></i>
-                    <span>Bookmarks</span>
+                <a href="{{ route('critical-tasks.index') }}" class="menu-item {{ request()->routeIs('critical-tasks.*') ? 'active' : '' }}">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Critical Tasks</span>
                 </a>
                 @if(auth()->user()->isSuperAdmin())
                 <a href="{{ route('trash.index') }}" class="menu-item {{ request()->routeIs('trash.*') ? 'active' : '' }}">
@@ -100,11 +100,11 @@
                     </div>
                 </div>
 
-                <!-- Bookmarks -->
-                <a href="{{ route('bookmarks.index') }}" class="header-icon-btn" title="Bookmarked Tasks">
-                    <i class="fas fa-bookmark"></i>
-                    @if(isset($bookmarkCount) && $bookmarkCount > 0)
-                    <span class="notification-badge">{{ $bookmarkCount > 9 ? '9+' : $bookmarkCount }}</span>
+                <!-- Critical Tasks -->
+                <a href="{{ route('critical-tasks.index') }}" class="header-icon-btn" title="Critical Tasks">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    @if(isset($criticalTaskCount) && $criticalTaskCount > 0)
+                    <span class="notification-badge">{{ $criticalTaskCount > 9 ? '9+' : $criticalTaskCount }}</span>
                     @endif
                 </a>
 
@@ -219,7 +219,7 @@
                             <i class="fas fa-tasks"></i>
                         </div>
                     </div>
-                    <div class="stat-value">{{ $stats['total'] }}</div>
+                    <div class="stat-value" id="statTotal">{{ $stats['total'] }}</div>
                     <div class="stat-change positive">
                         <i class="fas fa-arrow-up"></i>
                         All tasks
@@ -233,7 +233,7 @@
                             <i class="fas fa-clock"></i>
                         </div>
                     </div>
-                    <div class="stat-value">{{ $stats['pending'] }}</div>
+                    <div class="stat-value" id="statPending">{{ $stats['pending'] }}</div>
                     <div class="stat-change">
                         <i class="fas fa-info-circle"></i>
                         Needs attention
@@ -247,7 +247,7 @@
                             <i class="fas fa-spinner"></i>
                         </div>
                     </div>
-                    <div class="stat-value">{{ $stats['in_progress'] }}</div>
+                    <div class="stat-value" id="statInProgress">{{ $stats['in_progress'] }}</div>
                     <div class="stat-change">
                         <i class="fas fa-info-circle"></i>
                         Active work
@@ -261,10 +261,38 @@
                             <i class="fas fa-check-circle"></i>
                         </div>
                     </div>
-                    <div class="stat-value">{{ $stats['completed'] }}</div>
+                    <div class="stat-value" id="statCompleted">{{ $stats['completed'] }}</div>
                     <div class="stat-change positive">
                         <i class="fas fa-arrow-up"></i>
                         Finished tasks
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span class="stat-title">Incomplete Tasks</span>
+                        <div class="stat-icon incomplete">
+                            <i class="fas fa-times-circle"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="statIncomplete">{{ $stats['incomplete'] }}</div>
+                    <div class="stat-change">
+                        <i class="fas fa-info-circle"></i>
+                        Incomplete tasks
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span class="stat-title">Pause Task</span>
+                        <div class="stat-icon pause">
+                            <i class="fas fa-pause-circle"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="statOnHold">{{ $stats['on_hold'] }}</div>
+                    <div class="stat-change">
+                        <i class="fas fa-info-circle"></i>
+                        Paused tasks
                     </div>
                 </div>
             </div>
@@ -272,10 +300,32 @@
             <!-- Tasks Section -->
             <div class="task-section">
                 <div class="section-header">
-                    <h2 class="section-title">{{ $organization->name }} Tasks</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <h2 class="section-title">
+                            @if(request()->has('employee_id') && request()->employee_id)
+                                @php
+                                    $filteredEmployee = \App\Models\Employee::with('user')->find(request()->employee_id);
+                                @endphp
+                                @if($filteredEmployee)
+                                    Tasks for {{ $filteredEmployee->user->name ?? ($filteredEmployee->first_name . ' ' . $filteredEmployee->last_name) }}
+                                @else
+                                    {{ $organization->name }} Tasks
+                                @endif
+                            @else
+                                {{ $organization->name }} Tasks
+                            @endif
+                        </h2>
+                        @if(request()->has('employee_id') && request()->employee_id)
+                        <button onclick="window.location.href='{{ route('organization.tasks', $organization->id) }}'" class="btn" style="background: #6366f1; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
+                            <i class="fas fa-arrow-left"></i>
+                            <span>Back to All Tasks</span>
+                        </button>
+                        @endif
+                    </div>
                 </div>
 
                 @if($tasks->count() > 0)
+                <div class="task-table-wrapper">
                 <table class="task-table">
                     <thead>
                         <tr>
@@ -284,6 +334,7 @@
                             <th>Priority</th>
                             <th>Due Date</th>
                             <th>Assign To</th>
+                            <th>Assign By</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -297,7 +348,7 @@
                                 @endif
                             </td>
                             <td>
-                                <span class="badge badge-status {{ $task->status }}">
+                                <span class="badge badge-status {{ $task->status }}" id="statusBadge{{ $task->id }}">
                                     {{ ucfirst(str_replace('_', ' ', $task->status)) }}
                                 </span>
                             </td>
@@ -323,44 +374,49 @@
                                 @endif
                             </td>
                             <td>
-                                <div class="task-actions" onclick="event.stopPropagation();" style="display: flex; flex-direction: column; gap: 4px;">
+                                @if($task->assignedBy)
+                                    <span style="color: #475569; font-weight: 500;">{{ $task->assignedBy->name }}</span>
+                                @else
+                                    <span style="color: #94a3b8;">-</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="task-actions-wrapper" onclick="event.stopPropagation();" style="display: flex; flex-direction: column; gap: 4px;">
                                     <!-- Work Timer -->
                                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                                        <button class="btn btn-sm work-start-btn" id="workBtn{{ $task->id }}" onclick="toggleWork({{ $task->id }}, event)" style="background: #10b981; color: white; font-size: 11px; padding: 4px 8px;" title="Start Work">
+                                        <button class="btn btn-sm work-start-btn" id="workBtn{{ $task->id }}" onclick="startWork({{ $task->id }}, event)" style="background: #10b981; color: white; font-size: 11px; padding: 4px 8px;" title="Start Work">
                                             <i class="fas fa-play"></i> Start
                                         </button>
                                         <span class="work-timer" id="workTimer{{ $task->id }}" style="font-size: 11px; color: #475569; font-weight: 600; min-width: 70px;">00:00:00</span>
                                     </div>
-                                    <!-- Other Actions -->
-                                    <div style="display: flex; gap: 4px;">
-                                    @if(in_array($task->id, $bookmarkedTaskIds))
-                                    <button class="btn btn-sm bookmark-btn" onclick="toggleBookmark({{ $task->id }}, event)" style="background: #fef3c7; color: #f59e0b;" title="Remove Bookmark">
-                                        <i class="fas fa-bookmark"></i>
-                                    </button>
-                                    @else
-                                    <button class="btn btn-sm bookmark-btn" onclick="toggleBookmark({{ $task->id }}, event)" style="background: #f1f5f9; color: #475569;" title="Bookmark Task">
-                                        <i class="far fa-bookmark" style="opacity: 0.5;"></i>
-                                    </button>
-                                    @endif
-                                    @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
-                                    <button class="btn btn-sm" onclick="openAssignModal({{ $task->id }})" style="background: #e0e7ff; color: #4338ca;" title="Assign Task">
-                                        <i class="fas fa-user-plus"></i>
-                                    </button>
-                                    <button class="btn btn-sm" onclick="editTask({{ $task->id }})" style="background: #f1f5f9; color: #475569;">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    @if(auth()->user()->isSuperAdmin())
-                                    <form action="{{ route('tasks.destroy', $task) }}" method="POST" style="display: inline;" class="delete-task-form">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-danger" onclick="event.preventDefault(); confirmDeleteTask(this);">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
-                                    @endif
-                                    @else
-                                    <span style="color: #94a3b8; font-size: 12px;">View Only</span>
-                                    @endif
+                                    <!-- Multi Action Button -->
+                                    <div class="multi-action" id="multiAction{{ $task->id }}" onclick="event.stopPropagation();">
+                                        <div class="action-wrapper">
+                                            @if(in_array($task->id, $criticalTaskIds) || $task->priority === 'critical')
+                                            <button class="btn-multi-action critical-action" onclick="toggleCriticalTask({{ $task->id }}, event)" title="Remove from Critical"></button>
+                                            @else
+                                            <button class="btn-multi-action critical-action" onclick="toggleCriticalTask({{ $task->id }}, event)" title="Mark as Critical"></button>
+                                            @endif
+                                            @if($task->status !== 'completed' || (isset($tasksWithWorkSessions) && in_array($task->id, $tasksWithWorkSessions)))
+                                            <button class="btn-multi-action complete-action" onclick="completeTask({{ $task->id }}, event)" title="Complete Task"></button>
+                                            @endif
+                                            @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
+                                            @if($task->status !== 'incomplete')
+                                            <button class="btn-multi-action incomplete-action" onclick="incompleteTask({{ $task->id }}, event)" title="Mark as Incomplete"></button>
+                                            @endif
+                                            <button class="btn-multi-action assign-action" onclick="openAssignModal({{ $task->id }})" title="Assign Task"></button>
+                                            <button class="btn-multi-action edit-action" onclick="editTask({{ $task->id }})" title="Edit Task"></button>
+                                            @if(auth()->user()->isSuperAdmin())
+                                            <button class="btn-multi-action delete-action" onclick="event.preventDefault(); confirmDeleteTask(document.querySelector('#deleteBtn{{ $task->id }}').closest('form'));" title="Delete Task"></button>
+                                            <form action="{{ route('tasks.destroy', $task) }}" method="POST" style="display: none;" class="delete-task-form" id="deleteForm{{ $task->id }}">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" id="deleteBtn{{ $task->id }}"></button>
+                                            </form>
+                                            @endif
+                                            @endif
+                                            <button class="multi-action-trigger" onclick="toggleMultiAction({{ $task->id }}, event)"></button>
+                                        </div>
                                     </div>
                                 </div>
                             </td>
@@ -368,6 +424,7 @@
                         @endforeach
                     </tbody>
                 </table>
+                </div>
 
                 @if($tasks->hasPages())
                 <div style="margin-top: 20px; display: flex; justify-content: center;">
@@ -459,8 +516,12 @@
                 <div class="form-group">
                     <label class="form-label">Status *</label>
                     <select name="status" class="form-select" id="taskStatus" required>
+                        <option value="not_started">Not Started</option>
                         <option value="pending">Pending</option>
                         <option value="in_progress">In Progress</option>
+                        <option value="issue_in_working">Issue in Working</option>
+                        <option value="incomplete">Incomplete</option>
+                        <option value="on_hold">On Hold</option>
                         <option value="completed">Completed</option>
                     </select>
                 </div>
@@ -471,6 +532,7 @@
                         <option value="low">Low</option>
                         <option value="medium" selected>Medium</option>
                         <option value="high">High</option>
+                        <option value="critical">Critical</option>
                     </select>
                 </div>
 
@@ -520,7 +582,7 @@
                     .then(data => {
                         document.getElementById('taskTitle').value = data.title || '';
                         document.getElementById('taskDescription').value = data.description || '';
-                        document.getElementById('taskStatus').value = data.status || 'pending';
+                        document.getElementById('taskStatus').value = data.status || 'not_started';
                         document.getElementById('taskPriority').value = data.priority || 'medium';
                         document.getElementById('taskOrganizationId').value = data.organization_id || '{{ $organization->id }}';
                         document.getElementById('taskDueDate').value = data.due_date || '';
@@ -660,6 +722,14 @@
 
         // Assign Task Modal Functions
         function openAssignModal(taskId) {
+            // Close multi-action menu
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            
             const modal = document.getElementById('assignModal');
             const form = document.getElementById('assignForm');
             const taskIdInput = document.getElementById('assignTaskId');
@@ -845,13 +915,21 @@
             // 2. Status Information
             if (task.status) {
                 const statusColors = {
+                    'not_started': '#94a3b8',
                     'pending': '#f59e0b',
                     'in_progress': '#3b82f6',
+                    'issue_in_working': '#ef4444',
+                    'incomplete': '#f97316',
+                    'on_hold': '#f59e0b',
                     'completed': '#10b981'
                 };
                 const statusIcons = {
+                    'not_started': 'fa-circle',
                     'pending': 'fa-clock',
                     'in_progress': 'fa-spinner',
+                    'issue_in_working': 'fa-exclamation-triangle',
+                    'incomplete': 'fa-times-circle',
+                    'on_hold': 'fa-pause-circle',
                     'completed': 'fa-check-circle'
                 };
                 timelineHTML += `
@@ -865,6 +943,26 @@
                             <span class="timeline-detail-date">
                                 <i class="fas fa-info-circle"></i>
                                 Current status
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // 2.5. Task Completed Event (if completed)
+            if (task.status === 'completed' && updatedDate) {
+                const completedDate = updatedDate;
+                timelineHTML += `
+                    <div class="timeline-detail-item">
+                        <div class="timeline-detail-marker" style="background: #10b981;">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="timeline-detail-content">
+                            <h5>Task Completed</h5>
+                            <p style="color: #10b981; font-weight: 600;">Task was marked as completed</p>
+                            <span class="timeline-detail-date">
+                                <i class="fas fa-calendar"></i>
+                                Completed ${formatDate(completedDate)} (${getTimeAgo(completedDate)})
                             </span>
                         </div>
                     </div>
@@ -1170,18 +1268,18 @@
                             resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">No employees found</div>';
                         } else {
                             resultsDiv.innerHTML = data.map(emp => `
-                                <div class="search-result-item" onclick="viewEmployeeTasks(${emp.id})">
+                                <div class="search-result-item" onclick="viewEmployeeTasks(${emp.id}, {{ $organization->id }})" title="Click to view ${emp.task_count} task(s) assigned to ${emp.name}">
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <div>
-                                            <div style="font-weight: 600; color: var(--text-primary);">${emp.name}</div>
-                                            <div style="font-size: 12px; color: var(--text-secondary);">${emp.email}</div>
-                                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">
+                                        <div style="flex: 1;">
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${emp.name}</div>
+                                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">${emp.email}</div>
+                                            <div style="font-size: 11px; color: var(--text-tertiary);">
                                                 <i class="fas fa-building"></i> ${emp.department}
                                             </div>
                                         </div>
-                                        <div style="text-align: right;">
-                                            <div style="font-size: 20px; font-weight: 700; color: var(--accent-primary);">${emp.task_count}</div>
-                                            <div style="font-size: 11px; color: var(--text-secondary);">Tasks</div>
+                                        <div style="text-align: right; margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border-color);">
+                                            <div style="font-size: 24px; font-weight: 700; color: #6366f1; line-height: 1;">${emp.task_count}</div>
+                                            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Tasks</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1204,16 +1302,63 @@
             }
         });
 
-        function viewEmployeeTasks(employeeId) {
-            window.location.href = `/dashboard?employee_id=${employeeId}`;
+        function viewEmployeeTasks(employeeId, organizationId = null) {
+            if (organizationId) {
+                window.location.href = `{{ route('organization.tasks', ':orgId') }}?employee_id=${employeeId}`.replace(':orgId', organizationId);
+            } else {
+                window.location.href = `{{ route('dashboard') }}?employee_id=${employeeId}`;
+            }
         }
 
-        // Bookmark Toggle
-        function toggleBookmark(taskId, event) {
+        // Toggle Multi-Action Button
+        function toggleMultiAction(taskId, event) {
             if (event) {
                 event.stopPropagation();
             }
-            fetch(`/bookmarks/${taskId}/toggle`, {
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            const trigger = multiAction.querySelector('.multi-action-trigger');
+            const allMultiActions = document.querySelectorAll('.multi-action');
+            
+            // Close all other multi-action menus
+            allMultiActions.forEach(ma => {
+                if (ma.id !== `multiAction${taskId}`) {
+                    ma.classList.remove('is-active');
+                    const otherTrigger = ma.querySelector('.multi-action-trigger');
+                    if (otherTrigger) otherTrigger.classList.remove('is-active');
+                }
+            });
+            
+            // Toggle current menu
+            if (multiAction && trigger) {
+                multiAction.classList.toggle('is-active');
+                trigger.classList.toggle('is-active');
+            }
+        }
+
+        // Close multi-action menus when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.multi-action')) {
+                document.querySelectorAll('.multi-action').forEach(ma => {
+                    ma.classList.remove('is-active');
+                    const trigger = ma.querySelector('.multi-action-trigger');
+                    if (trigger) trigger.classList.remove('is-active');
+                });
+            }
+        });
+
+        // Critical Task Toggle
+        function toggleCriticalTask(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            // Close multi-action menu
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            fetch(`/critical-tasks/${taskId}/toggle`, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
@@ -1222,33 +1367,105 @@
             })
             .then(response => response.json())
             .then(data => {
-                const btn = event ? event.target.closest('.bookmark-btn') : document.querySelector(`.bookmark-btn[onclick*="${taskId}"]`);
-                if (btn) {
-                    const icon = btn.querySelector('i');
-                    if (data.bookmarked) {
-                        btn.style.background = '#fef3c7';
-                        btn.style.color = '#f59e0b';
-                        icon.style.opacity = '1';
-                        icon.className = 'fas fa-bookmark';
-                        showSuccessMessage('Task bookmarked!');
-                    } else {
-                        btn.style.background = '#f1f5f9';
-                        btn.style.color = '#475569';
-                        icon.style.opacity = '0.5';
-                        icon.className = 'far fa-bookmark';
-                        showSuccessMessage('Bookmark removed!');
-                    }
-                } else {
-                    // Reload page to update bookmark state
-                    window.location.reload();
+                // Close multi-action menu
+                const multiAction = document.getElementById(`multiAction${taskId}`);
+                if (multiAction) {
+                    multiAction.classList.remove('is-active');
+                    const trigger = multiAction.querySelector('.multi-action-trigger');
+                    if (trigger) trigger.classList.remove('is-active');
                 }
-                // Update bookmark count after toggle
-                updateBookmarkCount();
+                
+                // Reload page to update critical task state
+                window.location.reload();
             })
             .catch(error => {
-                console.error('Bookmark error:', error);
-                showErrorMessage('Failed to update bookmark. Please try again.');
+                console.error('Critical task error:', error);
+                showErrorMessage('Failed to update critical task. Please try again.');
             });
+        }
+
+        // Complete Task
+        function completeTask(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            // Close multi-action menu
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            fetch(`/tasks/${taskId}/complete`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update status badge if status changed
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    // Stop work timer and reload work status
+                    stopWorkTimer(taskId);
+                    loadWorkStatus(taskId);
+                    // Update stats cards
+                    updateStatsCards();
+                    showSuccessMessage(data.message || 'Task completed successfully!');
+                } else {
+                    showErrorMessage(data.message || 'Failed to complete task. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Complete task error:', error);
+                showErrorMessage('Failed to complete task. Please try again.');
+            });
+        }
+
+        // Incomplete Task (Admin and Super Admin only)
+        function incompleteTask(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            // Close multi-action menu
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            fetch(`/tasks/${taskId}/incomplete`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update status badge if status changed
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    // Reload work status
+                    loadWorkStatus(taskId);
+                    // Update stats cards
+                    updateStatsCards();
+                    showSuccessMessage(data.message || 'Task marked as incomplete successfully!');
+                } else {
+                    showErrorMessage(data.message || 'Failed to mark task as incomplete. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Incomplete task error:', error);
+                showErrorMessage('Failed to mark task as incomplete. Please try again.');
+            });
+        }
         }
 
         // Work Timer Functions
@@ -1293,21 +1510,45 @@
                     
                     if (!btn || !timer) return;
 
-                    if (data.is_running) {
-                        // Update button to pause
-                        btn.innerHTML = '<i class="fas fa-pause"></i> Pause';
-                        btn.style.background = '#f59e0b';
-                        btn.onclick = (e) => { e.stopPropagation(); pauseWork(taskId, e); };
+                    // If task is completed, show Completed button
+                    if (data.is_completed) {
+                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Completed';
+                        btn.style.background = '#10b981';
+                        btn.onclick = (e) => { e.stopPropagation(); };
+                        btn.style.cursor = 'default';
                         
-                        // Start timer
-                        const startTime = new Date(data.started_at);
-                        const baseSeconds = data.total_seconds - Math.floor((new Date() - startTime) / 1000);
-                        updateWorkTimer(taskId, data.started_at, Math.max(0, baseSeconds));
+                        // Stop timer and show total
+                        stopWorkTimer(taskId);
+                        timer.textContent = formatTime(data.total_seconds);
+                    } else if (data.is_running) {
+                        // Work is running - show Working button
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
+                        btn.style.background = '#3b82f6';
+                        btn.onclick = (e) => { e.stopPropagation(); pauseWork(taskId, e); };
+                        btn.style.cursor = 'pointer';
+                        
+                        if (data.started_at) {
+                            // Start timer if work is running
+                            const startTime = new Date(data.started_at);
+                            const baseSeconds = data.total_seconds - Math.floor((new Date() - startTime) / 1000);
+                            updateWorkTimer(taskId, data.started_at, Math.max(0, baseSeconds));
+                        }
+                    } else if (data.is_paused) {
+                        // Work is paused - show Resume button
+                        btn.innerHTML = '<i class="fas fa-play"></i> Resume';
+                        btn.style.background = '#10b981';
+                        btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
+                        btn.style.cursor = 'pointer';
+                        
+                        // Show total time if paused
+                        stopWorkTimer(taskId);
+                        timer.textContent = formatTime(data.total_seconds);
                     } else {
-                        // Update button to start
+                        // No work session - show Start button
                         btn.innerHTML = '<i class="fas fa-play"></i> Start';
                         btn.style.background = '#10b981';
                         btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
+                        btn.style.cursor = 'pointer';
                         
                         // Stop timer and show total
                         stopWorkTimer(taskId);
@@ -1330,7 +1571,20 @@
             .then(data => {
                 if (data.success) {
                     loadWorkStatus(taskId);
-                    showSuccessMessage('Work started!');
+                    // Update status badge if status changed
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    // Update paused tasks if any
+                    if (data.paused_tasks && data.paused_tasks.length > 0) {
+                        data.paused_tasks.forEach(pausedTaskId => {
+                            loadWorkStatus(pausedTaskId);
+                            updateStatusBadge(pausedTaskId, 'on_hold');
+                        });
+                    }
+                    // Update stats cards
+                    updateStatsCards();
+                    showSuccessMessage(data.message || 'Work started!');
                 } else {
                     showErrorMessage(data.message || 'Failed to start work');
                 }
@@ -1343,6 +1597,8 @@
 
         function pauseWork(taskId, event) {
             event.stopPropagation();
+            
+            // Pause the work
             fetch(`/tasks/${taskId}/work/pause`, {
                 method: 'POST',
                 headers: {
@@ -1355,6 +1611,12 @@
                 if (data.success) {
                     stopWorkTimer(taskId);
                     loadWorkStatus(taskId);
+                    // Update status badge if status changed
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    // Update stats cards
+                    updateStatsCards();
                     showSuccessMessage('Work paused!');
                 } else {
                     showErrorMessage(data.message || 'Failed to pause work');
@@ -1364,6 +1626,44 @@
                 console.error('Error:', error);
                 showErrorMessage('Failed to pause work');
             });
+        }
+
+        function updateStatusBadge(taskId, newStatus) {
+            const badge = document.getElementById(`statusBadge${taskId}`);
+            if (badge) {
+                // Remove old status class
+                badge.className = 'badge badge-status';
+                // Add new status class
+                badge.classList.add(newStatus);
+                // Update text
+                const statusText = newStatus.split('_').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' ');
+                badge.textContent = statusText;
+            }
+        }
+
+        function updateStatsCards() {
+            const organizationId = {{ $organization->id }};
+            fetch(`/organization/${organizationId}/stats`)
+                .then(response => response.json())
+                .then(stats => {
+                    // Update each stat card
+                    const totalEl = document.getElementById('statTotal');
+                    const pendingEl = document.getElementById('statPending');
+                    const inProgressEl = document.getElementById('statInProgress');
+                    const completedEl = document.getElementById('statCompleted');
+                    const incompleteEl = document.getElementById('statIncomplete');
+                    const onHoldEl = document.getElementById('statOnHold');
+                    
+                    if (totalEl) totalEl.textContent = stats.total || 0;
+                    if (pendingEl) pendingEl.textContent = stats.pending || 0;
+                    if (inProgressEl) inProgressEl.textContent = stats.in_progress || 0;
+                    if (completedEl) completedEl.textContent = stats.completed || 0;
+                    if (incompleteEl) incompleteEl.textContent = stats.incomplete || 0;
+                    if (onHoldEl) onHoldEl.textContent = stats.on_hold || 0;
+                })
+                .catch(error => console.error('Error updating stats:', error));
         }
 
         // Load work status for all tasks on page load
@@ -1524,22 +1824,22 @@
             @endif
         }
 
-        // Update bookmark count
-        function updateBookmarkCount() {
-            fetch('/bookmarks/count')
+        // Update critical task count
+        function updateCriticalTaskCount() {
+            fetch('/critical-tasks/count')
                 .then(response => {
                     if (!response.ok) throw new Error('Network response was not ok');
                     return response.json();
                 })
                 .then(data => {
-                    const bookmarkBtn = document.querySelector('a[href="{{ route("bookmarks.index") }}"]');
-                    if (bookmarkBtn) {
-                        let badge = bookmarkBtn.querySelector('.notification-badge');
+                    const criticalTaskBtn = document.querySelector('a[href="{{ route("critical-tasks.index") }}"]');
+                    if (criticalTaskBtn) {
+                        let badge = criticalTaskBtn.querySelector('.notification-badge');
                         if (data.count > 0) {
                             if (!badge) {
                                 badge = document.createElement('span');
                                 badge.className = 'notification-badge';
-                                bookmarkBtn.appendChild(badge);
+                                criticalTaskBtn.appendChild(badge);
                             }
                             badge.textContent = data.count > 9 ? '9+' : data.count;
                         } else {
@@ -1548,7 +1848,7 @@
                     }
                 })
                 .catch(error => {
-                    console.error('Bookmark count error:', error);
+                    console.error('Critical task count error:', error);
                     // Don't remove badge on error - keep existing state
                 });
         }
@@ -1564,9 +1864,9 @@
         setTimeout(updateTrashCount, 1000);
         @endif
 
-        // Update bookmark count periodically
-        setInterval(updateBookmarkCount, 30000); // Every 30 seconds
-        setTimeout(updateBookmarkCount, 1000);
+        // Update critical task count periodically
+        setInterval(updateCriticalTaskCount, 30000); // Every 30 seconds
+        setTimeout(updateCriticalTaskCount, 1000);
 
         // SweetAlert2 Functions
         function confirmDeleteTask(button) {
