@@ -37,7 +37,70 @@ class TaskController extends Controller
             // Super admin sees all tasks (no filter)
         }
         
+        // Apply filter based on stat card click
+        if ($request->has('filter')) {
+            $filter = $request->get('filter');
+            switch ($filter) {
+                case 'critical':
+                    // Show critical tasks (manually marked + critical priority)
+                    $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+                    $criticalPriorityTaskIds = Task::where('priority', 'critical')->pluck('id')->toArray();
+                    $criticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+                    $query->whereIn('id', $criticalTaskIds);
+                    break;
+                case 'working':
+                    // Show tasks with active work sessions
+                    $workingTaskIds = WorkSession::where('user_id', $user->id)
+                        ->where('is_running', true)
+                        ->pluck('task_id')
+                        ->unique()
+                        ->toArray();
+                    if (empty($workingTaskIds)) {
+                        $query->whereRaw('1 = 0'); // No working tasks
+                    } else {
+                        $query->whereIn('id', $workingTaskIds);
+                    }
+                    break;
+                case 'completed':
+                    $query->where('status', 'completed');
+                    break;
+                case 'incomplete':
+                    $query->where('status', 'incomplete');
+                    break;
+                case 'on_hold':
+                    // Show paused tasks (on_hold) and pending tasks
+                    $query->whereIn('status', ['on_hold', 'pending']);
+                    break;
+                case 'all':
+                default:
+                    // Show all tasks (no additional filter)
+                    break;
+            }
+        }
+        
         $tasks = $query->latest()->paginate(10);
+        
+        // Fix tasks with 'in_progress' status but no active work sessions
+        $inProgressTaskIds = collect($tasks->items())->where('status', 'in_progress')->pluck('id')->toArray();
+        if (!empty($inProgressTaskIds)) {
+            $tasksWithActiveSessions = WorkSession::whereIn('task_id', $inProgressTaskIds)
+                ->where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+            
+            $tasksWithoutActiveSessions = array_diff($inProgressTaskIds, $tasksWithActiveSessions);
+            if (!empty($tasksWithoutActiveSessions)) {
+                // Update tasks without active sessions to 'pending' status
+                Task::whereIn('id', $tasksWithoutActiveSessions)
+                    ->where('status', 'in_progress')
+                    ->update(['status' => 'pending']);
+                
+                // Refresh tasks to get updated statuses
+                $tasks = $query->latest()->paginate(10);
+            }
+        }
+        
         $organizations = MasterOrganization::orderBy('name')->get();
         $employees = Employee::with('user')->where('status', 'active')->orderBy('first_name')->get();
         
@@ -84,15 +147,64 @@ class TaskController extends Controller
             }
         }
         
+        // Calculate critical tasks count (for pending card) - apply same filters
+        $criticalStatsQuery = clone $statsQuery;
+        $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+        $criticalPriorityTaskIds = Task::where('priority', 'critical')->pluck('id')->toArray();
+        $allCriticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+        
+        // Apply same role/employee filters to critical tasks
+        if ($request->has('employee_id') && $request->employee_id) {
+            $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $criticalStatsQuery->pluck('id')->toArray());
+        } elseif ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $criticalStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+            } else {
+                $allCriticalTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $criticalStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate working tasks count (for in_progress card) - tasks with active work sessions
+        $workingStatsQuery = clone $statsQuery;
+        $workingTaskIds = WorkSession::where('user_id', $user->id)
+            ->where('is_running', true)
+            ->pluck('task_id')
+            ->unique()
+            ->toArray();
+        
+        // Apply same role/employee filters to working tasks
+        if ($request->has('employee_id') && $request->employee_id) {
+            $workingTaskIds = array_intersect($workingTaskIds, $workingStatsQuery->pluck('id')->toArray());
+        } elseif ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $workingStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+            } else {
+                $workingTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $workingStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate paused and pending tasks count (for pause task card)
+        $pausedPendingCount = (clone $statsQuery)->whereIn('status', ['on_hold', 'pending'])->count();
+        
         $stats = [
             'total' => $statsQuery->count(),
             'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
-            'pending' => (clone $statsQuery)->where('status', 'pending')->count(),
-            'in_progress' => (clone $statsQuery)->where('status', 'in_progress')->count(),
+            'pending' => count($allCriticalTaskIds), // Critical tasks count
+            'in_progress' => count($workingTaskIds), // Working tasks count (active work sessions)
             'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
             'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
             'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
-            'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(),
+            'on_hold' => $pausedPendingCount, // Paused and Pending tasks count
         ];
         
         return view('dashboard', compact('tasks', 'stats', 'organizations', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions'));
@@ -115,11 +227,53 @@ class TaskController extends Controller
             $statsQuery->where('visible_to_admin', true);
         }
         
+        // Calculate critical tasks count (for pending card) - apply same filters
+        $criticalStatsQuery = clone $statsQuery;
+        $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+        $criticalPriorityTaskIds = Task::where('priority', 'critical')->pluck('id')->toArray();
+        $allCriticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+        
+        // Apply same role filters to critical tasks
+        if ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $criticalStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+            } else {
+                $allCriticalTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $criticalStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate working tasks count (for in_progress card) - tasks with active work sessions
+        $workingStatsQuery = clone $statsQuery;
+        $workingTaskIds = WorkSession::where('user_id', $user->id)
+            ->where('is_running', true)
+            ->pluck('task_id')
+            ->unique()
+            ->toArray();
+        
+        // Apply same role filters to working tasks
+        if ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $workingStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+            } else {
+                $workingTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $workingStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+        }
+        
         $stats = [
             'total' => $statsQuery->count(),
             'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
-            'pending' => (clone $statsQuery)->where('status', 'pending')->count(),
-            'in_progress' => (clone $statsQuery)->where('status', 'in_progress')->count(),
+            'pending' => count($allCriticalTaskIds), // Critical tasks count
+            'in_progress' => count($workingTaskIds), // Working tasks count (active work sessions)
             'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
             'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
             'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
@@ -149,6 +303,11 @@ class TaskController extends Controller
 
         $validated['user_id'] = auth()->id() ?? 1; // Default to user 1 if no auth
         $validated['assigned_by'] = auth()->id(); // Set assigned_by to current user (task creator)
+        
+        // Prevent manually setting status to 'in_progress' - only work sessions can set this
+        if ($validated['status'] === 'in_progress') {
+            $validated['status'] = 'pending';
+        }
         
         // Only super admin can set visible_to_admin
         if (!$user->isSuperAdmin()) {
@@ -198,6 +357,20 @@ class TaskController extends Controller
             unset($validated['visible_to_admin']); // Remove from validated if not super admin
         } else {
             $validated['visible_to_admin'] = $request->has('visible_to_admin') ? (bool)$request->visible_to_admin : $task->visible_to_admin;
+        }
+
+        // Prevent manually setting status to 'in_progress' - only work sessions can set this
+        if ($validated['status'] === 'in_progress') {
+            // Check if task has an active work session
+            $hasActiveSession = WorkSession::where('task_id', $task->id)
+                ->where('is_running', true)
+                ->exists();
+            
+            if (!$hasActiveSession) {
+                // If no active session, change to 'pending' instead
+                $validated['status'] = 'pending';
+            }
+            // If has active session, allow 'in_progress' status
         }
 
         $oldPriority = $task->priority;
@@ -320,7 +493,69 @@ class TaskController extends Controller
             // Super admin sees all tasks (no filter)
         }
         
+        // Apply filter based on stat card click
+        if ($request->has('filter')) {
+            $filter = $request->get('filter');
+            switch ($filter) {
+                case 'critical':
+                    // Show critical tasks (manually marked + critical priority)
+                    $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+                    $criticalPriorityTaskIds = Task::where('priority', 'critical')->where('organization_id', $organizationId)->pluck('id')->toArray();
+                    $criticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+                    $query->whereIn('id', $criticalTaskIds);
+                    break;
+                case 'working':
+                    // Show tasks with active work sessions
+                    $workingTaskIds = WorkSession::where('user_id', $user->id)
+                        ->where('is_running', true)
+                        ->pluck('task_id')
+                        ->unique()
+                        ->toArray();
+                    if (empty($workingTaskIds)) {
+                        $query->whereRaw('1 = 0'); // No working tasks
+                    } else {
+                        $query->whereIn('id', $workingTaskIds);
+                    }
+                    break;
+                case 'completed':
+                    $query->where('status', 'completed');
+                    break;
+                case 'incomplete':
+                    $query->where('status', 'incomplete');
+                    break;
+                case 'on_hold':
+                    // Show paused tasks (on_hold) and pending tasks
+                    $query->whereIn('status', ['on_hold', 'pending']);
+                    break;
+                case 'all':
+                default:
+                    // Show all tasks (no additional filter)
+                    break;
+            }
+        }
+        
         $tasks = $query->latest()->paginate(10);
+        
+        // Fix tasks with 'in_progress' status but no active work sessions
+        $inProgressTaskIds = collect($tasks->items())->where('status', 'in_progress')->pluck('id')->toArray();
+        if (!empty($inProgressTaskIds)) {
+            $tasksWithActiveSessions = WorkSession::whereIn('task_id', $inProgressTaskIds)
+                ->where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+            
+            $tasksWithoutActiveSessions = array_diff($inProgressTaskIds, $tasksWithActiveSessions);
+            if (!empty($tasksWithoutActiveSessions)) {
+                // Update tasks without active sessions to 'pending' status
+                Task::whereIn('id', $tasksWithoutActiveSessions)
+                    ->where('status', 'in_progress')
+                    ->update(['status' => 'pending']);
+                
+                // Refresh tasks to get updated statuses
+                $tasks = $query->latest()->paginate(10);
+            }
+        }
         
         $organizations = MasterOrganization::orderBy('name')->get();
         $employees = Employee::with('user')->where('status', 'active')->orderBy('first_name')->get();
@@ -368,15 +603,64 @@ class TaskController extends Controller
             }
         }
         
+        // Calculate critical tasks count (for pending card) - apply same filters
+        $criticalStatsQuery = clone $statsQuery;
+        $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+        $criticalPriorityTaskIds = Task::where('priority', 'critical')->where('organization_id', $organizationId)->pluck('id')->toArray();
+        $allCriticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+        
+        // Apply same role/employee filters to critical tasks
+        if ($request->has('employee_id') && $request->employee_id) {
+            $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $criticalStatsQuery->pluck('id')->toArray());
+        } elseif ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $criticalStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+            } else {
+                $allCriticalTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $criticalStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate working tasks count (for in_progress card) - tasks with active work sessions
+        $workingStatsQuery = clone $statsQuery;
+        $workingTaskIds = WorkSession::where('user_id', $user->id)
+            ->where('is_running', true)
+            ->pluck('task_id')
+            ->unique()
+            ->toArray();
+        
+        // Apply same role/employee filters to working tasks
+        if ($request->has('employee_id') && $request->employee_id) {
+            $workingTaskIds = array_intersect($workingTaskIds, $workingStatsQuery->pluck('id')->toArray());
+        } elseif ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $workingStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+            } else {
+                $workingTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $workingStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate paused and pending tasks count (for pause task card)
+        $pausedPendingCount = (clone $statsQuery)->whereIn('status', ['on_hold', 'pending'])->count();
+        
         $stats = [
             'total' => $statsQuery->count(),
             'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
-            'pending' => (clone $statsQuery)->where('status', 'pending')->count(),
-            'in_progress' => (clone $statsQuery)->where('status', 'in_progress')->count(),
+            'pending' => count($allCriticalTaskIds), // Critical tasks count
+            'in_progress' => count($workingTaskIds), // Working tasks count (active work sessions)
             'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
             'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
             'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
-            'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(),
+            'on_hold' => $pausedPendingCount, // Paused and Pending tasks count
         ];
         
         return view('organization-dashboard', compact('tasks', 'stats', 'organizations', 'organization', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions'));
@@ -399,15 +683,60 @@ class TaskController extends Controller
             $statsQuery->where('visible_to_admin', true);
         }
         
+        // Calculate critical tasks count (for pending card) - apply same filters
+        $criticalStatsQuery = clone $statsQuery;
+        $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+        $criticalPriorityTaskIds = Task::where('priority', 'critical')->where('organization_id', $organizationId)->pluck('id')->toArray();
+        $allCriticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+        
+        // Apply same role filters to critical tasks
+        if ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $criticalStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+            } else {
+                $allCriticalTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $criticalStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate working tasks count (for in_progress card) - tasks with active work sessions
+        $workingStatsQuery = clone $statsQuery;
+        $workingTaskIds = WorkSession::where('user_id', $user->id)
+            ->where('is_running', true)
+            ->pluck('task_id')
+            ->unique()
+            ->toArray();
+        
+        // Apply same role filters to working tasks
+        if ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $filteredTaskIds = $workingStatsQuery->where('employee_id', $employee->id)->pluck('id')->toArray();
+                $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+            } else {
+                $workingTaskIds = [];
+            }
+        } elseif ($user->isAdmin()) {
+            $filteredTaskIds = $workingStatsQuery->where('visible_to_admin', true)->pluck('id')->toArray();
+            $workingTaskIds = array_intersect($workingTaskIds, $filteredTaskIds);
+        }
+        
+        // Calculate paused and pending tasks count (for pause task card)
+        $pausedPendingCount = (clone $statsQuery)->whereIn('status', ['on_hold', 'pending'])->count();
+        
         $stats = [
             'total' => $statsQuery->count(),
             'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
-            'pending' => (clone $statsQuery)->where('status', 'pending')->count(),
-            'in_progress' => (clone $statsQuery)->where('status', 'in_progress')->count(),
+            'pending' => count($allCriticalTaskIds), // Critical tasks count
+            'in_progress' => count($workingTaskIds), // Working tasks count (active work sessions)
             'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
             'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
             'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
-            'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(),
+            'on_hold' => $pausedPendingCount, // Paused and Pending tasks count
         ];
         
         return response()->json($stats);

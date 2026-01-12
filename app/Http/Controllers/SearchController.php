@@ -10,6 +10,13 @@ class SearchController extends Controller
 {
     public function searchEmployee(Request $request)
     {
+        $user = auth()->user();
+        
+        // Only admin and super admin can search employees
+        if (!$user || (!$user->isAdmin() && !$user->isSuperAdmin())) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        
         $search = $request->get('q', '');
         
         if (strlen($search) < 2) {

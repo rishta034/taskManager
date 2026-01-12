@@ -39,6 +39,16 @@
                 </button>
             </div>
             <div class="topbar-right">
+                <!-- Search Employee - Only for Admin and Super Admin -->
+                @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
+                <div class="header-search-wrapper">
+                    <div class="header-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="employeeSearchInput" placeholder="Search employee..." autocomplete="off">
+                        <div class="search-results" id="employeeSearchResults"></div>
+                    </div>
+                </div>
+                @endif
                 <div class="user-menu">
                     <div class="user-info" onclick="toggleUserMenu()">
                         @if(auth()->user()->avatar)
@@ -286,6 +296,82 @@
                 passwordIcon.classList.add('fa-eye');
             }
         }
+
+        // Employee Search Function - Global
+        function viewEmployeeTasks(employeeId) {
+            // Filter tasks by employee - redirect to dashboard
+            window.location.href = `{{ route('dashboard') }}?employee_id=${employeeId}`;
+        }
+
+        @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
+        // Employee Search - Only for Admin and Super Admin
+        let searchTimeout;
+        const employeeSearchInput = document.getElementById('employeeSearchInput');
+        if (employeeSearchInput) {
+            employeeSearchInput.addEventListener('input', function(e) {
+                clearTimeout(searchTimeout);
+                const query = e.target.value.trim();
+                const resultsDiv = document.getElementById('employeeSearchResults');
+                
+                if (query.length < 2) {
+                    resultsDiv.style.display = 'none';
+                    return;
+                }
+
+                searchTimeout = setTimeout(() => {
+                    fetch(`/search/employee?q=${encodeURIComponent(query)}`)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('Unauthorized');
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.error) {
+                                resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Unauthorized</div>';
+                            } else if (data.length === 0) {
+                                resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">No employees found</div>';
+                            } else {
+                                resultsDiv.innerHTML = data.map(emp => `
+                                    <div class="search-result-item" onclick="viewEmployeeTasks(${emp.id})" title="Click to view ${emp.task_count} task(s) assigned to ${emp.name}">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <div style="flex: 1;">
+                                                <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${emp.name}</div>
+                                                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">${emp.email}</div>
+                                                <div style="font-size: 11px; color: var(--text-tertiary);">
+                                                    <i class="fas fa-building"></i> ${emp.department}
+                                                </div>
+                                            </div>
+                                            <div style="text-align: right; margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border-color);">
+                                                <div style="font-size: 24px; font-weight: 700; color: #6366f1; line-height: 1;">${emp.task_count}</div>
+                                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Tasks</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('');
+                            }
+                            resultsDiv.style.display = 'block';
+                        })
+                        .catch(error => {
+                            console.error('Search error:', error);
+                            resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Error loading results</div>';
+                            resultsDiv.style.display = 'block';
+                        });
+                }, 300);
+            });
+
+            // Close search results on outside click
+            document.addEventListener('click', function(e) {
+                const searchWrapper = document.querySelector('.header-search-wrapper');
+                if (searchWrapper && !searchWrapper.contains(e.target)) {
+                    const resultsDiv = document.getElementById('employeeSearchResults');
+                    if (resultsDiv) {
+                        resultsDiv.style.display = 'none';
+                    }
+                }
+            });
+        }
+        @endif
     </script>
 </body>
 </html>

@@ -92,7 +92,8 @@
                     <i class="fas fa-expand"></i>
                 </button>
 
-                <!-- Search Employee -->
+                <!-- Search Employee - Only for Admin and Super Admin -->
+                @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
                 <div class="header-search-wrapper">
                     <div class="header-search">
                         <i class="fas fa-search"></i>
@@ -100,6 +101,7 @@
                         <div class="search-results" id="employeeSearchResults"></div>
                     </div>
                 </div>
+                @endif
 
                 <!-- Critical Tasks -->
                 <a href="{{ route('critical-tasks.index') }}" class="header-icon-btn" title="Critical Tasks">
@@ -213,7 +215,7 @@
 
             <!-- Stats Cards -->
             <div class="stats-grid">
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterTasks('all')" style="cursor: pointer;" title="Click to show all tasks">
                     <div class="stat-header">
                         <span class="stat-title">Total Tasks</span>
                         <div class="stat-icon total">
@@ -227,9 +229,9 @@
                     </div>
                 </div>
 
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterTasks('critical')" style="cursor: pointer;" title="Click to show critical tasks">
                     <div class="stat-header">
-                        <span class="stat-title">Pending Tasks</span>
+                        <span class="stat-title">Critical Tasks</span>
                         <div class="stat-icon pending">
                             <i class="fas fa-clock"></i>
                         </div>
@@ -237,11 +239,11 @@
                     <div class="stat-value" id="statPending">{{ $stats['pending'] }}</div>
                     <div class="stat-change">
                         <i class="fas fa-info-circle"></i>
-                        Needs attention
+                        Critical tasks
                     </div>
                 </div>
 
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterTasks('working')" style="cursor: pointer;" title="Click to show working tasks">
                     <div class="stat-header">
                         <span class="stat-title">In Progress</span>
                         <div class="stat-icon progress">
@@ -251,11 +253,11 @@
                     <div class="stat-value" id="statInProgress">{{ $stats['in_progress'] }}</div>
                     <div class="stat-change">
                         <i class="fas fa-info-circle"></i>
-                        Active work
+                        Working tasks
                     </div>
                 </div>
 
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterTasks('completed')" style="cursor: pointer;" title="Click to show completed tasks">
                     <div class="stat-header">
                         <span class="stat-title">Completed</span>
                         <div class="stat-icon completed">
@@ -269,7 +271,7 @@
                     </div>
                 </div>
 
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterTasks('incomplete')" style="cursor: pointer;" title="Click to show incomplete tasks">
                     <div class="stat-header">
                         <span class="stat-title">Incomplete Tasks</span>
                         <div class="stat-icon incomplete">
@@ -283,7 +285,7 @@
                     </div>
                 </div>
 
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterTasks('on_hold')" style="cursor: pointer;" title="Click to show paused and pending tasks">
                     <div class="stat-header">
                         <span class="stat-title">Pause Task</span>
                         <div class="stat-icon pause">
@@ -293,7 +295,7 @@
                     <div class="stat-value" id="statOnHold">{{ $stats['on_hold'] }}</div>
                     <div class="stat-change">
                         <i class="fas fa-info-circle"></i>
-                        Paused tasks
+                        Paused & Pending tasks
                     </div>
                 </div>
             </div>
@@ -312,11 +314,29 @@
                                 @else
                                     Recent Tasks
                                 @endif
+                            @elseif(request()->has('filter') && request()->filter)
+                                @php
+                                    $filterLabels = [
+                                        'all' => 'All Tasks',
+                                        'critical' => 'Critical Tasks',
+                                        'working' => 'Working Tasks',
+                                        'completed' => 'Completed Tasks',
+                                        'incomplete' => 'Incomplete Tasks',
+                                        'on_hold' => 'Paused & Pending Tasks'
+                                    ];
+                                    $currentFilter = request()->filter;
+                                @endphp
+                                {{ $filterLabels[$currentFilter] ?? 'Filtered Tasks' }}
                             @else
                                 Recent Tasks
                             @endif
                         </h2>
                         @if(request()->has('employee_id') && request()->employee_id)
+                        <button onclick="window.location.href='{{ route('dashboard') }}'" class="btn" style="background: #6366f1; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
+                            <i class="fas fa-arrow-left"></i>
+                            <span>Back to All Tasks</span>
+                        </button>
+                        @elseif(request()->has('filter') && request()->filter)
                         <button onclick="window.location.href='{{ route('dashboard') }}'" class="btn" style="background: #6366f1; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
                             <i class="fas fa-arrow-left"></i>
                             <span>Back to All Tasks</span>
@@ -337,6 +357,7 @@
                             <th>Due Date</th>
                             <th>Assign To</th>
                             <th>Assign By</th>
+                            <th>Created By</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -385,6 +406,13 @@
                             <td>
                                 @if($task->assignedBy)
                                     <span style="color: #475569; font-weight: 500;">{{ $task->assignedBy->name }}</span>
+                                @else
+                                    <span style="color: #94a3b8;">-</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($task->user)
+                                    <span style="color: #475569; font-weight: 500;">{{ $task->user->name }}</span>
                                 @else
                                     <span style="color: #94a3b8;">-</span>
                                 @endif
@@ -1265,65 +1293,80 @@
             }
         }
 
-        // Employee Search
-        let searchTimeout;
-        document.getElementById('employeeSearchInput').addEventListener('input', function(e) {
-            clearTimeout(searchTimeout);
-            const query = e.target.value.trim();
-            const resultsDiv = document.getElementById('employeeSearchResults');
-            
-            if (query.length < 2) {
-                resultsDiv.style.display = 'none';
-                return;
-            }
-
-            searchTimeout = setTimeout(() => {
-                fetch(`/search/employee?q=${encodeURIComponent(query)}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.length === 0) {
-                            resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">No employees found</div>';
-                        } else {
-                            resultsDiv.innerHTML = data.map(emp => `
-                                <div class="search-result-item" onclick="viewEmployeeTasks(${emp.id})" title="Click to view ${emp.task_count} task(s) assigned to ${emp.name}">
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <div style="flex: 1;">
-                                            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${emp.name}</div>
-                                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">${emp.email}</div>
-                                            <div style="font-size: 11px; color: var(--text-tertiary);">
-                                                <i class="fas fa-building"></i> ${emp.department}
-                                            </div>
-                                        </div>
-                                        <div style="text-align: right; margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border-color);">
-                                            <div style="font-size: 24px; font-weight: 700; color: #6366f1; line-height: 1;">${emp.task_count}</div>
-                                            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Tasks</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            `).join('');
-                        }
-                        resultsDiv.style.display = 'block';
-                    })
-                    .catch(error => {
-                        console.error('Search error:', error);
-                        resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Error loading results</div>';
-                        resultsDiv.style.display = 'block';
-                    });
-            }, 300);
-        });
-
-        // Close search results on outside click
-        document.addEventListener('click', function(e) {
-            const searchWrapper = document.querySelector('.header-search-wrapper');
-            if (searchWrapper && !searchWrapper.contains(e.target)) {
-                document.getElementById('employeeSearchResults').style.display = 'none';
-            }
-        });
-
+        // Employee Search - Only for Admin and Super Admin
         function viewEmployeeTasks(employeeId) {
             // Filter tasks by employee
             window.location.href = `{{ route('dashboard') }}?employee_id=${employeeId}`;
         }
+
+        @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
+        let searchTimeout;
+        const employeeSearchInput = document.getElementById('employeeSearchInput');
+        if (employeeSearchInput) {
+            employeeSearchInput.addEventListener('input', function(e) {
+                clearTimeout(searchTimeout);
+                const query = e.target.value.trim();
+                const resultsDiv = document.getElementById('employeeSearchResults');
+                
+                if (query.length < 2) {
+                    resultsDiv.style.display = 'none';
+                    return;
+                }
+
+                searchTimeout = setTimeout(() => {
+                    fetch(`/search/employee?q=${encodeURIComponent(query)}`)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('Unauthorized');
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.error) {
+                                resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Unauthorized</div>';
+                            } else if (data.length === 0) {
+                                resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">No employees found</div>';
+                            } else {
+                                resultsDiv.innerHTML = data.map(emp => `
+                                    <div class="search-result-item" onclick="viewEmployeeTasks(${emp.id})" title="Click to view ${emp.task_count} task(s) assigned to ${emp.name}">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <div style="flex: 1;">
+                                                <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${emp.name}</div>
+                                                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">${emp.email}</div>
+                                                <div style="font-size: 11px; color: var(--text-tertiary);">
+                                                    <i class="fas fa-building"></i> ${emp.department}
+                                                </div>
+                                            </div>
+                                            <div style="text-align: right; margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border-color);">
+                                                <div style="font-size: 24px; font-weight: 700; color: #6366f1; line-height: 1;">${emp.task_count}</div>
+                                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Tasks</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('');
+                            }
+                            resultsDiv.style.display = 'block';
+                        })
+                        .catch(error => {
+                            console.error('Search error:', error);
+                            resultsDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Error loading results</div>';
+                            resultsDiv.style.display = 'block';
+                        });
+                }, 300);
+            });
+
+            // Close search results on outside click
+            document.addEventListener('click', function(e) {
+                const searchWrapper = document.querySelector('.header-search-wrapper');
+                if (searchWrapper && !searchWrapper.contains(e.target)) {
+                    const resultsDiv = document.getElementById('employeeSearchResults');
+                    if (resultsDiv) {
+                        resultsDiv.style.display = 'none';
+                    }
+                }
+            });
+        }
+        @endif
 
         // Toggle Multi-Action Button
         function toggleMultiAction(taskId, event) {
@@ -1651,6 +1694,23 @@
                 ).join(' ');
                 badge.textContent = statusText;
             }
+        }
+
+        // Filter tasks by stat card click
+        function filterTasks(filterType) {
+            const currentUrl = new URL(window.location.href);
+            
+            // Remove existing filter and employee_id params
+            currentUrl.searchParams.delete('filter');
+            currentUrl.searchParams.delete('employee_id');
+            
+            // Add new filter if not 'all'
+            if (filterType !== 'all') {
+                currentUrl.searchParams.set('filter', filterType);
+            }
+            
+            // Redirect to filtered URL
+            window.location.href = currentUrl.toString();
         }
 
         function updateStatsCards() {
