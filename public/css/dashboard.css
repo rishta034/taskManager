@@ -1893,24 +1893,30 @@ body::before {
 /* Pagination */
 .pagination {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
+    align-items: center;
     list-style: none;
     padding: 0;
+    margin: 0;
 }
 
 .pagination li {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
 }
 
 .pagination a, .pagination span {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     padding: 8px 12px;
     border-radius: 6px;
     text-decoration: none;
     color: var(--text-secondary);
     background: var(--bg-hover);
     transition: all 0.3s;
+    white-space: nowrap;
 }
 
 .pagination a:hover {
@@ -1921,6 +1927,14 @@ body::before {
 .pagination .active span {
     background: #6366f1;
     color: white;
+    font-weight: 500;
+}
+
+.pagination .disabled span {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
 }
 
 @media (max-width: 768px) {
