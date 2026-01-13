@@ -50,11 +50,20 @@ class TaskController extends Controller
                     break;
                 case 'working':
                     // Show tasks with active work sessions
-                    $workingTaskIds = WorkSession::where('user_id', $user->id)
-                        ->where('is_running', true)
-                        ->pluck('task_id')
-                        ->unique()
-                        ->toArray();
+                    // Admin and Super Admin see ALL active work sessions (any user)
+                    // Regular users see only their own active work sessions
+                    if ($user->isAdmin() || $user->isSuperAdmin()) {
+                        $workingTaskIds = WorkSession::where('is_running', true)
+                            ->pluck('task_id')
+                            ->unique()
+                            ->toArray();
+                    } else {
+                        $workingTaskIds = WorkSession::where('user_id', $user->id)
+                            ->where('is_running', true)
+                            ->pluck('task_id')
+                            ->unique()
+                            ->toArray();
+                    }
                     if (empty($workingTaskIds)) {
                         $query->whereRaw('1 = 0'); // No working tasks
                     } else {
@@ -78,10 +87,11 @@ class TaskController extends Controller
             }
         }
         
-        $tasks = $query->latest()->paginate(10);
+        // Get all tasks for DataTables (client-side pagination handles it)
+        $allTasks = $query->latest()->get();
         
         // Fix tasks with 'in_progress' status but no active work sessions
-        $inProgressTaskIds = collect($tasks->items())->where('status', 'in_progress')->pluck('id')->toArray();
+        $inProgressTaskIds = $allTasks->where('status', 'in_progress')->pluck('id')->toArray();
         if (!empty($inProgressTaskIds)) {
             $tasksWithActiveSessions = WorkSession::whereIn('task_id', $inProgressTaskIds)
                 ->where('is_running', true)
@@ -97,9 +107,19 @@ class TaskController extends Controller
                     ->update(['status' => 'pending']);
                 
                 // Refresh tasks to get updated statuses
-                $tasks = $query->latest()->paginate(10);
+                $allTasks = $query->latest()->get();
             }
         }
+        
+        // Convert to paginator-like object for compatibility with view
+        // DataTables will handle pagination client-side
+        $tasks = new \Illuminate\Pagination\LengthAwarePaginator(
+            $allTasks,
+            $allTasks->count(),
+            1000, // Large page size so all items are on one "page"
+            1,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
         
         $organizations = MasterOrganization::orderBy('name')->get();
         $employees = Employee::with('user')->where('status', 'active')->orderBy('first_name')->get();
@@ -114,7 +134,7 @@ class TaskController extends Controller
         
         // Get tasks with work sessions for current user (to show complete button even for completed tasks)
         $tasksWithWorkSessions = WorkSession::where('user_id', $user->id)
-            ->whereIn('task_id', $tasks->pluck('id'))
+            ->whereIn('task_id', $allTasks->pluck('id'))
             ->pluck('task_id')
             ->unique()
             ->toArray();
@@ -171,11 +191,20 @@ class TaskController extends Controller
         
         // Calculate working tasks count (for in_progress card) - tasks with active work sessions
         $workingStatsQuery = clone $statsQuery;
-        $workingTaskIds = WorkSession::where('user_id', $user->id)
-            ->where('is_running', true)
-            ->pluck('task_id')
-            ->unique()
-            ->toArray();
+        // Admin and Super Admin see ALL active work sessions (any user)
+        // Regular users see only their own active work sessions
+        if ($user->isAdmin() || $user->isSuperAdmin()) {
+            $workingTaskIds = WorkSession::where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        } else {
+            $workingTaskIds = WorkSession::where('user_id', $user->id)
+                ->where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        }
         
         // Apply same role/employee filters to working tasks
         if ($request->has('employee_id') && $request->employee_id) {
@@ -208,6 +237,137 @@ class TaskController extends Controller
         ];
         
         return view('dashboard', compact('tasks', 'stats', 'organizations', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions'));
+    }
+
+    public function employeeTasks(Request $request)
+    {
+        $user = auth()->user();
+        
+        // Only admin and super admin can access employee tasks page
+        if (!$user->isAdmin() && !$user->isSuperAdmin()) {
+            abort(403, 'You do not have permission to access this page.');
+        }
+        
+        $query = Task::with(['user', 'organization', 'employee.user', 'employee.department', 'assignedBy']);
+        
+        $selectedEmployeeId = $request->get('employee_id');
+        $selectedEmployee = null;
+        
+        // Filter by selected employee
+        if ($selectedEmployeeId) {
+            $query->where('employee_id', $selectedEmployeeId);
+            $selectedEmployee = Employee::with('user', 'department')->find($selectedEmployeeId);
+        } else {
+            // If no employee selected, show no tasks initially
+            $query->whereRaw('1 = 0');
+        }
+        
+        // Apply filter based on stat card click
+        if ($request->has('filter')) {
+            $filter = $request->get('filter');
+            switch ($filter) {
+                case 'critical':
+                    $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+                    $criticalPriorityTaskIds = Task::where('priority', 'critical')->pluck('id')->toArray();
+                    $criticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+                    $query->whereIn('id', $criticalTaskIds);
+                    break;
+                case 'not_started':
+                    $query->where('status', 'not_started');
+                    break;
+                case 'in_progress':
+                    $query->where('status', 'in_progress');
+                    break;
+                case 'completed':
+                    $query->where('status', 'completed');
+                    break;
+                case 'incomplete':
+                    $query->where('status', 'incomplete');
+                    break;
+                case 'on_hold':
+                    $query->whereIn('status', ['on_hold', 'pending']);
+                    break;
+            }
+        }
+        
+        // Exclude soft-deleted tasks
+        $query->whereNull('deleted_at');
+        
+        // Order by created_at descending
+        $allTasks = $query->orderBy('created_at', 'desc')->get();
+        
+        // Paginate tasks
+        $tasks = new \Illuminate\Pagination\LengthAwarePaginator(
+            $allTasks,
+            $allTasks->count(),
+            1000,
+            1,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
+        
+        $organizations = MasterOrganization::orderBy('name')->get();
+        $employees = Employee::with('user')->where('status', 'active')->orderBy('first_name')->get();
+        
+        // Get critical task IDs
+        $manualCriticalTaskIds = \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray();
+        $criticalPriorityTaskIds = Task::where('priority', 'critical')->pluck('id')->toArray();
+        $criticalTaskIds = array_unique(array_merge($manualCriticalTaskIds, $criticalPriorityTaskIds));
+        
+        $criticalTaskCount = count($criticalTaskIds);
+        
+        $tasksWithWorkSessions = WorkSession::where('user_id', $user->id)
+            ->whereIn('task_id', $allTasks->pluck('id'))
+            ->pluck('task_id')
+            ->unique()
+            ->toArray();
+        
+        $unreadNotificationCount = $user->unreadNotifications()->count();
+        
+        $trashCount = 0;
+        if ($user->isSuperAdmin()) {
+            $trashCount = Task::onlyTrashed()->count();
+        }
+        
+        // Calculate stats for selected employee
+        $statsQuery = Task::query();
+        if ($selectedEmployeeId) {
+            $statsQuery->where('employee_id', $selectedEmployeeId);
+        } else {
+            $statsQuery->whereRaw('1 = 0');
+        }
+        
+        // Get working tasks (active work sessions)
+        $taskIds = $statsQuery->pluck('id')->toArray();
+        $workingTaskIds = [];
+        if (!empty($taskIds)) {
+            $workingTaskIds = WorkSession::where('is_running', true)
+                ->whereIn('task_id', $taskIds)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        }
+        
+        // Calculate paused and pending tasks count (for pause task card)
+        $pausedPendingCount = (clone $statsQuery)->whereIn('status', ['on_hold', 'pending'])->count();
+        
+        // Get all critical task IDs for stats
+        $allCriticalTaskIds = array_unique(array_merge(
+            \App\Models\TaskCriticalTask::where('user_id', $user->id)->pluck('task_id')->toArray(),
+            Task::where('priority', 'critical')->pluck('id')->toArray()
+        ));
+        
+        $stats = [
+            'total' => $statsQuery->count(),
+            'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
+            'pending' => count(array_intersect($allCriticalTaskIds, $statsQuery->pluck('id')->toArray())),
+            'in_progress' => count($workingTaskIds),
+            'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
+            'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
+            'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
+            'on_hold' => $pausedPendingCount,
+        ];
+        
+        return view('employee-tasks', compact('tasks', 'stats', 'organizations', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions', 'selectedEmployee', 'selectedEmployeeId'));
     }
 
     public function getStats()
@@ -247,13 +407,22 @@ class TaskController extends Controller
             $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
         }
         
-        // Calculate working tasks count (for in_progress card) - tasks with active work sessions
+        // Calculate working tasks count (for in_progress card) - ONLY tasks with active work sessions (is_running = true)
         $workingStatsQuery = clone $statsQuery;
-        $workingTaskIds = WorkSession::where('user_id', $user->id)
-            ->where('is_running', true)
-            ->pluck('task_id')
-            ->unique()
-            ->toArray();
+        // Admin and Super Admin see ALL active work sessions (any user)
+        // Regular users see only their own active work sessions
+        if ($user->isAdmin() || $user->isSuperAdmin()) {
+            $workingTaskIds = WorkSession::where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        } else {
+            $workingTaskIds = WorkSession::where('user_id', $user->id)
+                ->where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        }
         
         // Apply same role filters to working tasks
         if ($user->isUser()) {
@@ -273,11 +442,11 @@ class TaskController extends Controller
             'total' => $statsQuery->count(),
             'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
             'pending' => count($allCriticalTaskIds), // Critical tasks count
-            'in_progress' => count($workingTaskIds), // Working tasks count (active work sessions)
+            'in_progress' => count($workingTaskIds), // Working tasks count (ONLY tasks with is_running = true)
             'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
             'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
             'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
-            'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(),
+            'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(), // On hold tasks are separate, not counted as working
         ];
         
         return response()->json($stats);
@@ -455,7 +624,11 @@ class TaskController extends Controller
         }
 
         $organizationId = $task->organization_id;
-        $task->delete(); // Soft delete
+        
+        // Soft delete: This will hide the task from ALL users (users, admins, and superadmins)
+        // Soft-deleted tasks are automatically excluded from all queries due to SoftDeletes trait
+        // Only visible in trash (TrashController) which is superadmin-only
+        $task->delete();
 
         // Redirect based on organization
         if ($organizationId) {
@@ -470,6 +643,8 @@ class TaskController extends Controller
         $user = auth()->user();
         $organization = MasterOrganization::findOrFail($organizationId);
         
+        // Note: Task model uses SoftDeletes, so soft-deleted tasks are automatically excluded
+        // Only non-deleted tasks will be shown to users, admins, and superadmins
         $query = Task::with(['user', 'organization', 'employee.user', 'employee.department', 'assignedBy'])
             ->where('organization_id', $organizationId);
         
@@ -506,11 +681,20 @@ class TaskController extends Controller
                     break;
                 case 'working':
                     // Show tasks with active work sessions
-                    $workingTaskIds = WorkSession::where('user_id', $user->id)
-                        ->where('is_running', true)
-                        ->pluck('task_id')
-                        ->unique()
-                        ->toArray();
+                    // Admin and Super Admin see ALL active work sessions (any user)
+                    // Regular users see only their own active work sessions
+                    if ($user->isAdmin() || $user->isSuperAdmin()) {
+                        $workingTaskIds = WorkSession::where('is_running', true)
+                            ->pluck('task_id')
+                            ->unique()
+                            ->toArray();
+                    } else {
+                        $workingTaskIds = WorkSession::where('user_id', $user->id)
+                            ->where('is_running', true)
+                            ->pluck('task_id')
+                            ->unique()
+                            ->toArray();
+                    }
                     if (empty($workingTaskIds)) {
                         $query->whereRaw('1 = 0'); // No working tasks
                     } else {
@@ -534,10 +718,10 @@ class TaskController extends Controller
             }
         }
         
-        $tasks = $query->latest()->paginate(10);
+        $allTasks = $query->latest()->get();
         
         // Fix tasks with 'in_progress' status but no active work sessions
-        $inProgressTaskIds = collect($tasks->items())->where('status', 'in_progress')->pluck('id')->toArray();
+        $inProgressTaskIds = $allTasks->where('status', 'in_progress')->pluck('id')->toArray();
         if (!empty($inProgressTaskIds)) {
             $tasksWithActiveSessions = WorkSession::whereIn('task_id', $inProgressTaskIds)
                 ->where('is_running', true)
@@ -553,9 +737,19 @@ class TaskController extends Controller
                     ->update(['status' => 'pending']);
                 
                 // Refresh tasks to get updated statuses
-                $tasks = $query->latest()->paginate(10);
+                $allTasks = $query->latest()->get();
             }
         }
+        
+        // Convert to paginator-like object for compatibility with view
+        // DataTables will handle pagination client-side
+        $tasks = new \Illuminate\Pagination\LengthAwarePaginator(
+            $allTasks,
+            $allTasks->count(),
+            1000, // Large page size so all items are on one "page"
+            1,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
         
         $organizations = MasterOrganization::orderBy('name')->get();
         $employees = Employee::with('user')->where('status', 'active')->orderBy('first_name')->get();
@@ -627,11 +821,20 @@ class TaskController extends Controller
         
         // Calculate working tasks count (for in_progress card) - tasks with active work sessions
         $workingStatsQuery = clone $statsQuery;
-        $workingTaskIds = WorkSession::where('user_id', $user->id)
-            ->where('is_running', true)
-            ->pluck('task_id')
-            ->unique()
-            ->toArray();
+        // Admin and Super Admin see ALL active work sessions (any user)
+        // Regular users see only their own active work sessions
+        if ($user->isAdmin() || $user->isSuperAdmin()) {
+            $workingTaskIds = WorkSession::where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        } else {
+            $workingTaskIds = WorkSession::where('user_id', $user->id)
+                ->where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        }
         
         // Apply same role/employee filters to working tasks
         if ($request->has('employee_id') && $request->employee_id) {
@@ -703,13 +906,22 @@ class TaskController extends Controller
             $allCriticalTaskIds = array_intersect($allCriticalTaskIds, $filteredTaskIds);
         }
         
-        // Calculate working tasks count (for in_progress card) - tasks with active work sessions
+        // Calculate working tasks count (for in_progress card) - ONLY tasks with active work sessions (is_running = true)
         $workingStatsQuery = clone $statsQuery;
-        $workingTaskIds = WorkSession::where('user_id', $user->id)
-            ->where('is_running', true)
-            ->pluck('task_id')
-            ->unique()
-            ->toArray();
+        // Admin and Super Admin see ALL active work sessions (any user)
+        // Regular users see only their own active work sessions
+        if ($user->isAdmin() || $user->isSuperAdmin()) {
+            $workingTaskIds = WorkSession::where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        } else {
+            $workingTaskIds = WorkSession::where('user_id', $user->id)
+                ->where('is_running', true)
+                ->pluck('task_id')
+                ->unique()
+                ->toArray();
+        }
         
         // Apply same role filters to working tasks
         if ($user->isUser()) {
@@ -732,11 +944,11 @@ class TaskController extends Controller
             'total' => $statsQuery->count(),
             'not_started' => (clone $statsQuery)->where('status', 'not_started')->count(),
             'pending' => count($allCriticalTaskIds), // Critical tasks count
-            'in_progress' => count($workingTaskIds), // Working tasks count (active work sessions)
+            'in_progress' => count($workingTaskIds), // Working tasks count (ONLY tasks with is_running = true)
             'issue_in_working' => (clone $statsQuery)->where('status', 'issue_in_working')->count(),
             'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
             'incomplete' => (clone $statsQuery)->where('status', 'incomplete')->count(),
-            'on_hold' => $pausedPendingCount, // Paused and Pending tasks count
+            'on_hold' => $pausedPendingCount, // Paused and Pending tasks count (on_hold tasks are NOT counted as working)
         ];
         
         return response()->json($stats);
@@ -796,33 +1008,56 @@ class TaskController extends Controller
             ], 400);
         }
 
-        // Find all other active work sessions for this user across all tasks
-        $otherActiveSessions = WorkSession::where('user_id', $user->id)
+        // Check if ANY user is currently working on this task
+        $anyActiveSession = WorkSession::where('task_id', $task->id)
             ->where('is_running', true)
-            ->where('task_id', '!=', $task->id)
-            ->get();
-
-        // Pause all other active sessions and update their task statuses
-        $pausedTaskIds = [];
-        foreach ($otherActiveSessions as $session) {
-            // Calculate elapsed time
-            $elapsedSeconds = now()->diffInSeconds($session->started_at);
-            $newTotalSeconds = $session->total_seconds + $elapsedSeconds;
-
-            // Pause the session
-            $session->update([
-                'is_running' => false,
-                'paused_at' => now(),
-                'total_seconds' => $newTotalSeconds,
-            ]);
-
-            // Update task status to 'on_hold' if not completed
-            $otherTask = Task::find($session->task_id);
-            if ($otherTask && $otherTask->status !== 'completed') {
-                $otherTask->update(['status' => 'on_hold']);
-                $pausedTaskIds[] = $otherTask->id;
+            ->first();
+        
+        // For regular users: prevent starting if another user is working
+        // For Admin/Super Admin: allow multiple users to work on same task
+        if (!$user->isAdmin() && !$user->isSuperAdmin()) {
+            if ($anyActiveSession && $anyActiveSession->user_id != $user->id) {
+                $workingUser = \App\Models\User::find($anyActiveSession->user_id);
+                $userName = $workingUser ? $workingUser->name : 'Another user';
+                return response()->json([
+                    'success' => false,
+                    'message' => "This task is currently being worked on by {$userName}. Please wait for them to finish or pause their work."
+                ], 400);
             }
         }
+
+        // For regular users: pause all other active sessions (only one working task allowed)
+        // For Admin/Super Admin: allow multiple working tasks (don't pause others)
+        $pausedTaskIds = [];
+        if ($user->isUser()) {
+            // Find all other active work sessions for this user across all tasks
+            $otherActiveSessions = WorkSession::where('user_id', $user->id)
+                ->where('is_running', true)
+                ->where('task_id', '!=', $task->id)
+                ->get();
+
+            // Pause all other active sessions and update their task statuses
+            foreach ($otherActiveSessions as $session) {
+                // Calculate elapsed time
+                $elapsedSeconds = now()->diffInSeconds($session->started_at);
+                $newTotalSeconds = $session->total_seconds + $elapsedSeconds;
+
+                // Pause the session
+                $session->update([
+                    'is_running' => false,
+                    'paused_at' => now(),
+                    'total_seconds' => $newTotalSeconds,
+                ]);
+
+                // Update task status to 'on_hold' if not completed
+                $otherTask = Task::find($session->task_id);
+                if ($otherTask && $otherTask->status !== 'completed') {
+                    $otherTask->update(['status' => 'on_hold']);
+                    $pausedTaskIds[] = $otherTask->id;
+                }
+            }
+        }
+        // Admin/Super Admin can have multiple working tasks, so don't pause others
 
         // Check if there's a paused session for this task
         $pausedSession = WorkSession::where('task_id', $task->id)
@@ -909,13 +1144,18 @@ class TaskController extends Controller
         $activeSession = $task->activeWorkSession($user->id);
         $totalSeconds = $task->getTotalWorkTime($user->id);
         
+        // Check if ANY user has an active session on this task
+        $anyActiveSession = WorkSession::where('task_id', $task->id)
+            ->where('is_running', true)
+            ->first();
+        
         // Check if task is completed and has work sessions (work started after completion)
         $hasWorkSessions = WorkSession::where('task_id', $task->id)
             ->where('user_id', $user->id)
             ->exists();
         $isCompleted = $task->status === 'completed';
 
-        // Check if there's a paused session
+        // Check if there's a paused session for current user
         $pausedSession = WorkSession::where('task_id', $task->id)
             ->where('user_id', $user->id)
             ->where('is_running', false)
@@ -929,9 +1169,15 @@ class TaskController extends Controller
             'started_at' => null,
             'is_completed' => $isCompleted,
             'has_work_sessions' => $hasWorkSessions,
+            'is_being_worked_by_other' => false,
+            'working_user_id' => null,
+            'working_user_name' => null,
+            'is_admin' => $user->isAdmin() || $user->isSuperAdmin(),
+            'is_super_admin' => $user->isSuperAdmin(),
         ];
 
         if ($activeSession) {
+            // Current user is working
             $response['is_running'] = true;
             $response['started_at'] = $activeSession->started_at->toISOString();
             
@@ -939,8 +1185,19 @@ class TaskController extends Controller
             $currentSeconds = now()->diffInSeconds($activeSession->started_at);
             $response['current_session_seconds'] = $currentSeconds;
             $response['total_seconds'] = $activeSession->total_seconds + $currentSeconds;
+        } elseif ($anyActiveSession) {
+            // Another user is working on this task
+            // For Admin/Super Admin: show info but allow them to see it's being worked on
+            // For regular users: mark as being worked by other
+            if (!$user->isAdmin() && !$user->isSuperAdmin()) {
+                $response['is_being_worked_by_other'] = true;
+            }
+            $response['working_user_id'] = $anyActiveSession->user_id;
+            $workingUser = \App\Models\User::find($anyActiveSession->user_id);
+            $response['working_user_name'] = $workingUser ? $workingUser->name : 'Unknown';
+            $response['started_at'] = $anyActiveSession->started_at->toISOString();
         } elseif ($pausedSession) {
-            // There's a paused session
+            // There's a paused session for current user
             $response['is_paused'] = true;
         }
 

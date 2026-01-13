@@ -41,6 +41,8 @@ class CriticalTaskController extends Controller
         $user = auth()->user();
         $criticalTaskIds = TaskCriticalTask::where('user_id', $user->id)->pluck('task_id');
         
+        // Note: Task model uses SoftDeletes, so soft-deleted tasks are automatically excluded
+        // Only non-deleted tasks will be shown
         $query = Task::with(['user', 'organization', 'employee.user', 'employee.department', 'assignedBy'])
             ->where(function($q) use ($criticalTaskIds) {
                 // Include manually marked critical tasks OR tasks with critical priority

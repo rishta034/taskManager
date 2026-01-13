@@ -40,6 +40,7 @@ Route::post('/settings/theme', [AuthController::class, 'updateTheme'])->name('se
 // Protected Routes
 Route::middleware(['auth'])->group(function () {
     Route::get('/', [TaskController::class, 'index'])->name('dashboard');
+    Route::get('/employee-tasks', [TaskController::class, 'employeeTasks'])->name('employee.tasks');
     Route::get('/organization/{organizationId}', [TaskController::class, 'organizationTasks'])->name('organization.tasks');
     Route::post('/tasks', [TaskController::class, 'store'])->name('tasks.store');
     Route::get('/tasks/{task}', [TaskController::class, 'show'])->name('tasks.show');

@@ -13,12 +13,15 @@
 <body>
     <div class="dashboard-container">
         <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
                     <i class="fas fa-tasks"></i>
                     <span>TaskManager</span>
                 </div>
+                <button class="sidebar-toggle-btn" onclick="toggleSidebarCollapse()" title="Toggle Sidebar">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
             </div>
             <nav class="sidebar-menu">
                 <a href="{{ route('dashboard') }}" class="menu-item {{ request()->routeIs('dashboard') ? 'active' : '' }}">
@@ -301,9 +304,10 @@
 
             <!-- Tasks Section -->
             <div class="task-section">
-                <div class="section-header">
-                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <h2 class="section-title">
+                <!-- Advanced Dashboard Header -->
+                <div class="advanced-dashboard-header">
+                    <div class="dashboard-header-left">
+                        <h1 class="dashboard-title">
                             @if(request()->has('employee_id') && request()->employee_id)
                                 @php
                                     $filteredEmployee = \App\Models\Employee::with('user')->find(request()->employee_id);
@@ -329,46 +333,64 @@
                             @else
                                 {{ $organization->name }} Tasks
                             @endif
-                        </h2>
-                        @if(request()->has('employee_id') && request()->employee_id)
-                        <button onclick="window.location.href='{{ route('organization.tasks', $organization->id) }}'" class="btn" style="background: #6366f1; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
-                            <i class="fas fa-arrow-left"></i>
-                            <span>Back to All Tasks</span>
-                        </button>
-                        @elseif(request()->has('filter') && request()->filter)
-                        <button onclick="window.location.href='{{ route('organization.tasks', $organization->id) }}'" class="btn" style="background: #6366f1; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
-                            <i class="fas fa-arrow-left"></i>
-                            <span>Back to All Tasks</span>
-                        </button>
-                        @endif
+                        </h1>
+                        <p class="dashboard-subtitle">Click to sort • Filter and search • Pagination enabled</p>
+                    </div>
+                    @if(request()->has('employee_id') && request()->employee_id || request()->has('filter') && request()->filter)
+                    <button onclick="window.location.href='{{ route('organization.tasks', $organization->id) }}'" class="back-btn">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Back</span>
+                    </button>
+                    @endif
+                    <div class="header-actions">
+                        <button class="header-icon-btn" title="Export to Excel" onclick="exportToExcel()" id="exportExcelBtn"><i class="fas fa-file-excel"></i></button>
+                        <button class="header-icon-btn" title="Export to PDF" onclick="exportToPDF()" id="exportPDFBtn"><i class="fas fa-file-pdf"></i></button>
+                        <button class="header-icon-btn" title="Print Preview" onclick="printPreview()" id="printBtn"><i class="fas fa-print"></i></button>
+                        <button class="header-icon-btn" title="Grid Card View" onclick="toggleGridView()" id="gridViewBtn"><i class="fas fa-th"></i></button>
+                        <button class="header-icon-btn" title="List/Table View" onclick="toggleListView()" id="listViewBtn" style="display: none;"><i class="fas fa-list"></i></button>
+                        <select class="header-select" id="pageLengthSelect">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="-1">All</option>
+                        </select>
+                        <button class="header-icon-btn" title="Decrease Font Size" onclick="decreaseFontSize()" id="decreaseFontBtn"><i class="fas fa-minus"></i></button>
+                        <button class="header-icon-btn" title="Increase Font Size" onclick="increaseFontSize()" id="increaseFontBtn"><i class="fas fa-plus"></i></button>
+                        <button class="header-icon-btn" title="Toggle Text Wrap" onclick="toggleTextWrap()" id="textWrapBtn"><i class="fas fa-align-justify"></i></button>
                     </div>
                 </div>
 
                 @if($tasks->count() > 0)
-                <div class="task-table-wrapper">
-                <table class="task-table">
-                    <thead>
+                <div class="task-table-wrapper" id="tableWrapper">
+                    <table class="task-table advanced-table" id="tasksTable">
+                    <thead class="text-nowrap">
                         <tr>
-                            <th>Task</th>
-                            <th>Status</th>
-                            <th>Priority</th>
-                            <th>Due Date</th>
-                            <th>Assign To</th>
-                            <th>Assign By</th>
-                            <th>Created By</th>
-                            <th>Actions</th>
+                            <th>TASK</th>
+                            <th>STATUS</th>
+                            <th>PRIORITY</th>
+                            <th>DUE DATE</th>
+                            <th>ASSIGN TO</th>
+                            <th>ASSIGN BY</th>
+                            <th>CREATED BY</th>
+                            <th>ACTIONS</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($tasks as $task)
-                        <tr onclick="showTaskTimeline({{ $task->id }})" style="cursor: pointer;">
+                        <tr data-task-id="{{ $task->id }}" class="table-row" style="cursor: pointer;">
                             <td>
-                                <div class="task-title">{{ $task->title }}</div>
-                                @if($task->description)
-                                <div class="task-description">{{ \Illuminate\Support\Str::limit($task->description, 50) }}</div>
-                                @endif
+                                <div class="task-cell-content">
+                                    <div class="task-avatar">{{ strtoupper(substr($task->title, 0, 1)) }}</div>
+                                    <div class="task-info">
+                                        <div class="task-title">{{ $task->title }}</div>
+                                        @if($task->description)
+                                        <div class="task-description">{{ \Illuminate\Support\Str::limit($task->description, 50) }}</div>
+                                        @endif
+                                    </div>
+                                </div>
                             </td>
-                            <td>
+                            <td class="text-nowrap">
                                 <span class="badge badge-status {{ $task->status }}" id="statusBadge{{ $task->id }}">
                                     {{ ucfirst(str_replace('_', ' ', $task->status)) }}
                                 </span>
@@ -380,42 +402,58 @@
                             </td>
                             <td>
                                 @if($task->due_date)
-                                    {{ $task->due_date->format('M d, Y') }}
+                                    <span style="font-size: 11px;">{{ $task->due_date->format('M d, Y') }}</span>
                                 @else
-                                    <span style="color: #94a3b8;">No due date</span>
+                                    <span style="color: #94a3b8; font-size: 11px;">No due date</span>
                                 @endif
                             </td>
                             <td>
                                 @if($task->employee)
-                                    <span class="assigned-employee" data-department="{{ $task->employee->department->name ?? 'No Department' }}">
-                                        {{ $task->employee->full_name }}
-                                    </span>
+                                    <div class="user-icon-wrapper" style="position: relative; display: inline-block;">
+                                        <i class="fas fa-user-circle" style="font-size: 20px; color: #6366f1; cursor: pointer;"></i>
+                                        <div class="user-tooltip">
+                                            <div class="tooltip-name">{{ $task->employee->full_name }}</div>
+                                            <div class="tooltip-designation">{{ $task->employee->department->name ?? 'No Department' }}</div>
+                                        </div>
+                                    </div>
                                 @else
-                                    <span style="color: #94a3b8;">-</span>
+                                    <i class="fas fa-user-slash" style="font-size: 18px; color: #94a3b8;"></i>
                                 @endif
                             </td>
                             <td>
                                 @if($task->assignedBy)
-                                    <span style="color: #475569; font-weight: 500;">{{ $task->assignedBy->name }}</span>
+                                    <div class="user-icon-wrapper" style="position: relative; display: inline-block;">
+                                        <i class="fas fa-user-tie" style="font-size: 20px; color: #8b5cf6; cursor: pointer;"></i>
+                                        <div class="user-tooltip">
+                                            <div class="tooltip-name">{{ $task->assignedBy->name }}</div>
+                                            <div class="tooltip-designation">{{ ucfirst(str_replace('_', ' ', $task->assignedBy->role)) }}</div>
+                                        </div>
+                                    </div>
                                 @else
-                                    <span style="color: #94a3b8;">-</span>
+                                    <i class="fas fa-user-slash" style="font-size: 18px; color: #94a3b8;"></i>
                                 @endif
                             </td>
                             <td>
                                 @if($task->user)
-                                    <span style="color: #475569; font-weight: 500;">{{ $task->user->name }}</span>
+                                    <div class="user-icon-wrapper" style="position: relative; display: inline-block;">
+                                        <i class="fas fa-user" style="font-size: 20px; color: #10b981; cursor: pointer;"></i>
+                                        <div class="user-tooltip">
+                                            <div class="tooltip-name">{{ $task->user->name }}</div>
+                                            <div class="tooltip-designation">{{ ucfirst(str_replace('_', ' ', $task->user->role)) }}</div>
+                                        </div>
+                                    </div>
                                 @else
-                                    <span style="color: #94a3b8;">-</span>
+                                    <i class="fas fa-user-slash" style="font-size: 18px; color: #94a3b8;"></i>
                                 @endif
                             </td>
                             <td>
                                 <div class="task-actions-wrapper" onclick="event.stopPropagation();" style="display: flex; flex-direction: column; gap: 4px;">
                                     <!-- Work Timer -->
                                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                                        <button class="btn btn-sm work-start-btn" id="workBtn{{ $task->id }}" onclick="startWork({{ $task->id }}, event)" style="background: #10b981; color: white; font-size: 11px; padding: 4px 8px;" title="Start Work">
+                                        <button class="btn btn-sm work-start-btn" id="workBtn{{ $task->id }}" onclick="startWork({{ $task->id }}, event)" style="background: #10b981; color: white; font-size: 10px; padding: 3px 6px;" title="Start Work">
                                             <i class="fas fa-play"></i> Start
                                         </button>
-                                        <span class="work-timer" id="workTimer{{ $task->id }}" style="font-size: 11px; color: #475569; font-weight: 600; min-width: 70px;">00:00:00</span>
+                                        <span class="work-timer" id="workTimer{{ $task->id }}" style="font-size: 10px; color: #475569; font-weight: 600; min-width: 70px;">00:00:00</span>
                                     </div>
                                     <!-- Multi Action Button -->
                                     <div class="multi-action" id="multiAction{{ $task->id }}" onclick="event.stopPropagation();">
@@ -451,14 +489,9 @@
                         </tr>
                         @endforeach
                     </tbody>
-                </table>
+                    </table>
                 </div>
-
-                @if($tasks->hasPages())
-                <div style="margin-top: 20px; display: flex; justify-content: center;">
-                    {{ $tasks->links() }}
-                </div>
-                @endif
+                <div id="gridViewContainer" style="display: none;"></div>
                 @else
                 <div class="empty-state">
                     <i class="fas fa-clipboard-list"></i>
@@ -747,6 +780,25 @@
         function toggleSidebar() {
             document.querySelector('.sidebar').classList.toggle('active');
         }
+
+        // Toggle sidebar collapse/expand
+        function toggleSidebarCollapse() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            
+            // Save state to localStorage
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebarCollapsed', isCollapsed);
+        }
+
+        // Load sidebar state from localStorage on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+            const sidebar = document.getElementById('sidebar');
+            if (sidebarCollapsed && sidebar) {
+                sidebar.classList.add('collapsed');
+            }
+        });
 
         // Assign Task Modal Functions
         function openAssignModal(taskId) {
@@ -1562,7 +1614,7 @@
                         stopWorkTimer(taskId);
                         timer.textContent = formatTime(data.total_seconds);
                     } else if (data.is_running) {
-                        // Work is running - show Working button
+                        // Current user is working - show Working button
                         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
                         btn.style.background = '#3b82f6';
                         btn.onclick = (e) => { e.stopPropagation(); pauseWork(taskId, e); };
@@ -1574,22 +1626,71 @@
                             const baseSeconds = data.total_seconds - Math.floor((new Date() - startTime) / 1000);
                             updateWorkTimer(taskId, data.started_at, Math.max(0, baseSeconds));
                         }
+                    } else if (data.is_being_worked_by_other) {
+                        // Another user is working on this task - show Working button (disabled)
+                        const userName = data.working_user_name || 'Another user';
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
+                        btn.style.background = '#3b82f6';
+                        btn.title = `Being worked on by ${userName}`;
+                        btn.onclick = (e) => { 
+                            e.stopPropagation(); 
+                            showErrorMessage(`This task is currently being worked on by ${userName}. Please wait for them to finish.`);
+                        };
+                        btn.style.cursor = 'not-allowed';
+                        
+                        // Stop timer and show total
+                        stopWorkTimer(taskId);
+                        timer.textContent = formatTime(data.total_seconds || 0);
+                        
+                        // Update status badge to show in_progress
+                        if (data.status) {
+                            updateStatusBadge(taskId, 'in_progress');
+                        }
                     } else if (data.is_paused) {
-                        // Work is paused - show Resume button
-                        btn.innerHTML = '<i class="fas fa-play"></i> Resume';
-                        btn.style.background = '#10b981';
-                        btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
-                        btn.style.cursor = 'pointer';
+                        // Work is paused - show Resume button (only for regular users, not admin/super admin)
+                        if (isAdmin || isSuperAdmin) {
+                            // Admin/Super Admin: Don't show start/resume button if they didn't start it
+                            btn.innerHTML = '<i class="fas fa-info-circle"></i> Info';
+                            btn.style.background = '#94a3b8';
+                            btn.title = 'Work is paused by another user';
+                            btn.onclick = (e) => { e.stopPropagation(); };
+                            btn.style.cursor = 'default';
+                        } else {
+                            btn.innerHTML = '<i class="fas fa-play"></i> Resume';
+                            btn.style.background = '#10b981';
+                            btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
+                            btn.style.cursor = 'pointer';
+                        }
                         
                         // Show total time if paused
                         stopWorkTimer(taskId);
                         timer.textContent = formatTime(data.total_seconds);
                     } else {
-                        // No work session - show Start button
-                        btn.innerHTML = '<i class="fas fa-play"></i> Start';
-                        btn.style.background = '#10b981';
-                        btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
-                        btn.style.cursor = 'pointer';
+                        // No work session
+                        if (isAdmin || isSuperAdmin) {
+                            // Admin/Super Admin: Don't show Start button - they can only view working status
+                            if (data.working_user_name) {
+                                // Someone else is working - show Working status
+                                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
+                                btn.style.background = '#3b82f6';
+                                btn.title = `Being worked on by ${data.working_user_name}`;
+                                btn.onclick = (e) => { e.stopPropagation(); };
+                                btn.style.cursor = 'default';
+                            } else {
+                                // No one working - hide button or show disabled state
+                                btn.innerHTML = '<i class="fas fa-info-circle"></i> Info';
+                                btn.style.background = '#94a3b8';
+                                btn.title = 'No active work session';
+                                btn.onclick = (e) => { e.stopPropagation(); };
+                                btn.style.cursor = 'default';
+                            }
+                        } else {
+                            // Regular user - show Start button
+                            btn.innerHTML = '<i class="fas fa-play"></i> Start';
+                            btn.style.background = '#10b981';
+                            btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
+                            btn.style.cursor = 'pointer';
+                        }
                         
                         // Stop timer and show total
                         stopWorkTimer(taskId);
@@ -2001,6 +2102,986 @@
         @endif
     </script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+    <script>
+        // Pass PHP variables to JavaScript
+        var criticalTaskIds = @json($criticalTaskIds ?? []);
+        var tasksWithWorkSessions = @json($tasksWithWorkSessions ?? []);
+        var isAdmin = {{ auth()->user()->isAdmin() || auth()->user()->isSuperAdmin() ? 'true' : 'false' }};
+        var isSuperAdmin = {{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }};
+        var tasksBaseUrl = '{{ url("/tasks") }}';
+        
+        $(document).ready(function() {
+            // Initialize DataTables
+            var table = $('#tasksTable').DataTable({
+                'paging': true,
+                'pageLength': 10,
+                'lengthMenu': [[10, 25, 50, -1], [10, 25, 50, "All"]],
+                'searching': true,
+                'ordering': true,
+                'info': true,
+                'autoWidth': false,
+                'responsive': true,
+                'order': [],
+                'language': {
+                    'search': 'Search tasks:',
+                    'lengthMenu': 'Show _MENU_ tasks per page',
+                    'info': 'Showing _START_ to _END_ of _TOTAL_ tasks',
+                    'infoEmpty': 'Showing 0 to 0 of 0 tasks',
+                    'infoFiltered': '(filtered from _MAX_ total tasks)',
+                    'paginate': {
+                        'first': 'First',
+                        'last': 'Last',
+                        'next': 'Next',
+                        'previous': 'Previous'
+                    },
+                    'emptyTable': 'No tasks available'
+                },
+                'columnDefs': [
+                    {
+                        'targets': [7], // Actions column
+                        'orderable': false,
+                        'searchable': false
+                    },
+                    {
+                        'targets': [0], // Task column
+                        'orderable': true,
+                        'searchable': true
+                    }
+                ],
+                'dom': '<"advanced-table-top"lf>rt<"advanced-table-bottom"ip><"clear">',
+                'pagingType': 'simple_numbers',
+                'drawCallback': function(settings) {
+                    // Click handlers are handled by event delegation below
+                }
+            });
+
+            // Attach click handlers to rows (for task timeline) - using event delegation
+            $('#tasksTable tbody').on('click', 'tr', function() {
+                var taskId = $(this).data('task-id');
+                if (taskId) {
+                    showTaskTimeline(parseInt(taskId));
+                }
+            });
+
+            // Prevent row click when clicking on action buttons
+            $('#tasksTable tbody').on('click', '.task-actions-wrapper, .btn, button, .multi-action', function(e) {
+                e.stopPropagation();
+            });
+
+            // Page length selector
+            $('#pageLengthSelect').on('change', function() {
+                table.page.len(parseInt($(this).val())).draw();
+                if (isGridView) {
+                    generateCardGridView();
+                }
+            });
+
+            // Regenerate grid when table is redrawn
+            table.on('draw', function() {
+                if (isGridView) {
+                    setTimeout(function() {
+                        generateCardGridView();
+                    }, 100);
+                }
+            });
+
+            // Listen for search input changes
+            table.on('search.dt', function() {
+                if (isGridView) {
+                    setTimeout(function() {
+                        generateCardGridView();
+                    }, 150);
+                }
+            });
+
+            $(document).on('keyup', '.dataTables_filter input', function() {
+                if (isGridView) {
+                    setTimeout(function() {
+                        if (isGridView) {
+                            generateCardGridView();
+                        }
+                    }, 300);
+                }
+            });
+        });
+
+        var isGridView = false;
+        var textWrapEnabled = false;
+
+        // Export to Excel (CSV format)
+        function exportToExcel() {
+            var table = $('#tasksTable').DataTable();
+            var headers = [];
+            var csvContent = '\uFEFF';
+            
+            $('#tasksTable thead th').each(function(index) {
+                var headerText = $(this).text().trim();
+                headers.push('"' + headerText.replace(/"/g, '""') + '"');
+            });
+            
+            csvContent += headers.join(',') + '\n';
+            
+            table.rows({search: 'applied'}).every(function() {
+                var row = this.node();
+                var rowData = [];
+                
+                $(row).find('td').each(function(index) {
+                    if (index < $(row).find('td').length - 1) {
+                        var cellText = $(this).text().trim().replace(/"/g, '""').replace(/\n/g, ' ').replace(/\r/g, '');
+                        if ($(this).find('.user-icon-wrapper').length) {
+                            var tooltipName = $(this).find('.tooltip-name').text().trim();
+                            var tooltipDesignation = $(this).find('.tooltip-designation').text().trim();
+                            cellText = tooltipName + (tooltipDesignation ? ' (' + tooltipDesignation + ')' : '');
+                        }
+                        rowData.push('"' + cellText + '"');
+                    }
+                });
+                
+                csvContent += rowData.join(',') + '\n';
+            });
+            
+            var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            var link = document.createElement('a');
+            var url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'tasks_export_' + new Date().toISOString().split('T')[0] + '.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            showSuccessMessage('Tasks exported to Excel (CSV) successfully!');
+        }
+
+        // Export to PDF
+        function exportToPDF() {
+            var table = $('#tasksTable').DataTable();
+            var headers = [];
+            var rows = [];
+            
+            $('#tasksTable thead th').each(function(index) {
+                headers.push($(this).text().trim());
+            });
+            
+            table.rows({search: 'applied'}).every(function() {
+                var row = this.node();
+                var rowData = [];
+                
+                $(row).find('td').each(function(index) {
+                    if (index < $(row).find('td').length - 1) {
+                        var cellText = $(this).text().trim().replace(/\n/g, ' ').replace(/\r/g, '');
+                        if ($(this).find('.user-icon-wrapper').length) {
+                            var tooltipName = $(this).find('.tooltip-name').text().trim();
+                            var tooltipDesignation = $(this).find('.tooltip-designation').text().trim();
+                            cellText = tooltipName + (tooltipDesignation ? ' (' + tooltipDesignation + ')' : '');
+                        }
+                        rowData.push(cellText);
+                    }
+                });
+                
+                rows.push(rowData);
+            });
+            
+            const { jsPDF } = window.jspdf;
+            var doc = new jsPDF();
+            
+            doc.setFontSize(18);
+            doc.text('{{ $organization->name }} - Task Manager', 14, 15);
+            doc.setFontSize(12);
+            doc.text('Export Date: ' + new Date().toLocaleDateString(), 14, 22);
+            
+            doc.autoTable({
+                head: [headers],
+                body: rows,
+                startY: 28,
+                styles: {
+                    fontSize: 8,
+                    cellPadding: 3,
+                    overflow: 'linebreak',
+                    cellWidth: 'wrap'
+                },
+                headStyles: {
+                    fillColor: [139, 92, 246],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold'
+                },
+                alternateRowStyles: {
+                    fillColor: [245, 247, 250]
+                },
+                margin: { top: 28 }
+            });
+            
+            doc.save('{{ $organization->name }}_tasks_export_' + new Date().toISOString().split('T')[0] + '.pdf');
+            
+            showSuccessMessage('Tasks exported to PDF successfully!');
+        }
+
+        // Print Preview
+        function printPreview() {
+            var printWindow = window.open('', '_blank');
+            var table = $('#tasksTable').clone();
+            
+            table.find('.task-actions-wrapper, .multi-action').remove();
+            
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>{{ $organization->name }} - Print Preview</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 20px; }
+                            table { width: 100%; border-collapse: collapse; }
+                            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                            th { background-color: #f2f2f2; font-weight: bold; }
+                            tr:nth-child(even) { background-color: #f9f9f9; }
+                            @media print { body { margin: 0; } }
+                        </style>
+                    </head>
+                    <body>
+                        <h2>{{ $organization->name }} - Task Manager Dashboard</h2>
+                        ${table[0].outerHTML}
+                    </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(function() {
+                printWindow.print();
+            }, 250);
+        }
+
+        // Toggle Grid View (Card-based Layout)
+        function toggleGridView() {
+            try {
+                isGridView = true;
+                var table = $('#tasksTable').DataTable();
+                var tableWrapper = $('#tableWrapper');
+                var gridContainer = $('#gridViewContainer');
+                
+                if (!gridContainer.length) {
+                    console.error('gridViewContainer element not found');
+                    showErrorMessage('Grid container not found');
+                    return;
+                }
+                
+                $('#tasksTable').hide();
+                $('.advanced-table-bottom').hide();
+                
+                $('.advanced-table-top').show();
+                $('.dataTables_filter').show();
+                $('.dataTables_length').show();
+                
+                tableWrapper.addClass('grid-view');
+                $('#gridViewBtn').addClass('active');
+                $('#listViewBtn').show();
+                $('#gridViewBtn').hide();
+                
+                generateCardGridView();
+                
+                localStorage.setItem('taskManager_viewMode', 'grid');
+                
+                setTimeout(function() {
+                    gridContainer.css({
+                        'display': 'grid',
+                        'visibility': 'visible',
+                        'opacity': '1'
+                    });
+                    
+                    var cardCount = gridContainer.find('.task-card').length;
+                    console.log('Grid view activated, cards generated:', cardCount);
+                    
+                    if (cardCount === 0) {
+                        console.warn('No cards generated!');
+                        showErrorMessage('No tasks found to display in grid view');
+                    } else {
+                        showSuccessMessage('Switched to Card Grid View (' + cardCount + ' cards)');
+                    }
+                }, 100);
+            } catch (error) {
+                console.error('Error in toggleGridView:', error);
+                showErrorMessage('Error switching to grid view: ' + error.message);
+            }
+        }
+
+        // Toggle List View (Table View)
+        function toggleListView() {
+            try {
+                isGridView = false;
+                var table = $('#tasksTable').DataTable();
+                var tableWrapper = $('#tableWrapper');
+                var gridContainer = $('#gridViewContainer');
+                
+                gridContainer.css({
+                    'display': 'none',
+                    'visibility': 'hidden',
+                    'opacity': '0'
+                });
+                
+                $('#tasksTable').show();
+                $('.advanced-table-top, .advanced-table-bottom').show();
+                
+                tableWrapper.removeClass('grid-view');
+                $('#gridViewBtn').removeClass('active');
+                $('#listViewBtn').hide();
+                $('#gridViewBtn').show();
+                
+                localStorage.setItem('taskManager_viewMode', 'list');
+                
+                console.log('List view activated');
+                showSuccessMessage('Switched to Table/List View');
+            } catch (error) {
+                console.error('Error in toggleListView:', error);
+                showErrorMessage('Error switching to list view: ' + error.message);
+            }
+        }
+
+        // Generate Card Grid View
+        function generateCardGridView() {
+            try {
+                var table = $('#tasksTable').DataTable();
+                var gridContainer = $('#gridViewContainer');
+                
+                if (!gridContainer.length) {
+                    console.error('gridViewContainer not found');
+                    return;
+                }
+                
+                gridContainer.empty();
+                
+                var rowCount = 0;
+                
+                table.rows({search: 'applied'}).every(function() {
+                    var row = this.node();
+                    var taskId = $(row).attr('data-task-id') || $(row).data('task-id');
+                    
+                    if (!taskId) {
+                        var workBtnId = $(row).find('.work-start-btn').attr('id');
+                        if (workBtnId) {
+                            taskId = workBtnId.replace('workBtn', '');
+                        }
+                    }
+                    
+                    if (!taskId) {
+                        console.warn('Task ID not found for row');
+                        return;
+                    }
+                    
+                    rowCount++;
+                    
+                    var cells = $(row).find('td');
+                    
+                    var taskTitle = $(cells[0]).find('.task-title').text().trim() || 'Untitled Task';
+                    var taskDesc = $(cells[0]).find('.task-description').text().trim() || '';
+                    
+                    var statusBadge = $(cells[1]).find('.badge-status');
+                    var status = statusBadge.text().trim() || 'N/A';
+                    var statusClass = statusBadge.attr('class') || '';
+                    var statusMatch = statusClass.match(/badge-status\s+(\S+)/);
+                    statusClass = statusMatch ? statusMatch[1] : '';
+                    
+                    var priorityBadge = $(cells[2]).find('.badge-priority');
+                    var priority = priorityBadge.text().trim() || 'N/A';
+                    var priorityClass = priorityBadge.attr('class') || '';
+                    var priorityMatch = priorityClass.match(/badge-priority\s+(\S+)/);
+                    priorityClass = priorityMatch ? priorityMatch[1] : '';
+                    var priorityValue = priorityClass.toLowerCase();
+                    
+                    var dueDate = $(cells[3]).text().trim() || 'No due date';
+                    
+                    var assignToIcon = $(cells[4]).find('.user-icon-wrapper');
+                    var assignTo = 'Unassigned';
+                    if (assignToIcon.length) {
+                        var assignToName = assignToIcon.find('.tooltip-name').text().trim();
+                        var assignToDept = assignToIcon.find('.tooltip-designation').text().trim();
+                        assignTo = assignToName + (assignToDept ? ' (' + assignToDept + ')' : '');
+                    }
+                    
+                    var assignByIcon = $(cells[5]).find('.user-icon-wrapper');
+                    var assignBy = 'N/A';
+                    if (assignByIcon.length) {
+                        var assignByName = assignByIcon.find('.tooltip-name').text().trim();
+                        var assignByRole = assignByIcon.find('.tooltip-designation').text().trim();
+                        assignBy = assignByName + (assignByRole ? ' (' + assignByRole + ')' : '');
+                    }
+                    
+                    var createdByIcon = $(cells[6]).find('.user-icon-wrapper');
+                    var createdBy = 'N/A';
+                    if (createdByIcon.length) {
+                        var createdByName = createdByIcon.find('.tooltip-name').text().trim();
+                        var createdByRole = createdByIcon.find('.tooltip-designation').text().trim();
+                        createdBy = createdByName + (createdByRole ? ' (' + createdByRole + ')' : '');
+                    }
+                    
+                    var isCritical = (criticalTaskIds && criticalTaskIds.includes(parseInt(taskId))) || priorityValue === 'critical';
+                    var taskStatus = statusClass.toLowerCase().replace(/\s+/g, '_');
+                    var showCompleteBtn = taskStatus !== 'completed' || (tasksWithWorkSessions && tasksWithWorkSessions.includes(parseInt(taskId)));
+                    var showIncompleteBtn = isAdmin && taskStatus !== 'incomplete';
+                    var showAdminBtns = isAdmin;
+                    var showSuperAdminBtns = isSuperAdmin;
+                    
+                    var actionButtonsHtml = '';
+                    actionButtonsHtml += '<div class="task-card-actions" onclick="event.stopPropagation();">';
+                    actionButtonsHtml += '<div class="multi-action" id="multiActionCard' + taskId + '">';
+                    actionButtonsHtml += '<div class="action-wrapper">';
+                    
+                    actionButtonsHtml += '<button class="btn-multi-action critical-action" onclick="event.stopPropagation(); toggleCriticalTask(' + taskId + ', event)" title="' + (isCritical ? 'Remove from Critical' : 'Mark as Critical') + '"></button>';
+                    
+                    if (showCompleteBtn) {
+                        actionButtonsHtml += '<button class="btn-multi-action complete-action" onclick="event.stopPropagation(); completeTask(' + taskId + ', event)" title="Complete Task"></button>';
+                    }
+                    
+                    if (showAdminBtns) {
+                        if (showIncompleteBtn) {
+                            actionButtonsHtml += '<button class="btn-multi-action incomplete-action" onclick="event.stopPropagation(); incompleteTask(' + taskId + ', event)" title="Mark as Incomplete"></button>';
+                        }
+                        actionButtonsHtml += '<button class="btn-multi-action assign-action" onclick="event.stopPropagation(); openAssignModal(' + taskId + ')" title="Assign Task"></button>';
+                        actionButtonsHtml += '<button class="btn-multi-action edit-action" onclick="event.stopPropagation(); editTask(' + taskId + ')" title="Edit Task"></button>';
+                    }
+                    
+                    if (showSuperAdminBtns) {
+                        actionButtonsHtml += '<button class="btn-multi-action delete-action" onclick="event.stopPropagation(); event.preventDefault(); confirmDeleteTask(document.querySelector(\'#deleteBtnCard' + taskId + '\').closest(\'form\'));" title="Delete Task"></button>';
+                        actionButtonsHtml += '<form action="' + tasksBaseUrl + '/' + taskId + '" method="POST" style="display: none;" class="delete-task-form" id="deleteFormCard' + taskId + '">';
+                        actionButtonsHtml += '<input type="hidden" name="_token" value="{{ csrf_token() }}">';
+                        actionButtonsHtml += '<input type="hidden" name="_method" value="DELETE">';
+                        actionButtonsHtml += '<button type="submit" id="deleteBtnCard' + taskId + '"></button>';
+                        actionButtonsHtml += '</form>';
+                    }
+                    
+                    actionButtonsHtml += '<button type="button" class="multi-action-trigger" data-task-id="' + taskId + '"></button>';
+                    actionButtonsHtml += '</div>';
+                    actionButtonsHtml += '</div>';
+                    actionButtonsHtml += '</div>';
+                    
+                    var cardHtml = `
+                        <div class="task-card" data-task-id="${taskId}">
+                            <div class="task-card-content">
+                                <div class="task-card-header">
+                                    <div class="task-card-avatar">${taskTitle.charAt(0).toUpperCase()}</div>
+                                    <div class="task-card-info">
+                                        <h4 class="task-card-title">${taskTitle}</h4>
+                                        ${taskDesc ? '<p class="task-card-subtitle">' + taskDesc.substring(0, 50) + (taskDesc.length > 50 ? '...' : '') + '</p>' : ''}
+                                    </div>
+                                </div>
+                                <div class="task-card-body">
+                                    <div class="task-card-row">
+                                        <span class="task-card-label">Status:</span>
+                                        <span class="badge badge-status ${statusClass}">${status}</span>
+                                    </div>
+                                    <div class="task-card-row">
+                                        <span class="task-card-label">Priority:</span>
+                                        <span class="badge badge-priority ${priorityClass}">${priority}</span>
+                                    </div>
+                                    <div class="task-card-row">
+                                        <span class="task-card-label">Due Date:</span>
+                                        <span class="task-card-value">${dueDate}</span>
+                                    </div>
+                                    <div class="task-card-row">
+                                        <span class="task-card-label">Assign To:</span>
+                                        <span class="task-card-value">${assignTo}</span>
+                                    </div>
+                                </div>
+                                <div class="task-card-footer">
+                                    <div class="task-card-work-timer">
+                                        <button class="btn btn-sm work-start-btn" id="workBtnCard${taskId}" onclick="startWork(${taskId}, event)" style="background: #10b981; color: white; font-size: 11px; padding: 4px 8px; border-radius: 6px;" title="Start Work">
+                                            <i class="fas fa-play"></i> Start
+                                        </button>
+                                        <span class="work-timer" id="workTimerCard${taskId}" style="font-size: 11px; color: #475569; font-weight: 600; min-width: 70px;">00:00:00</span>
+                                    </div>
+                                    ${actionButtonsHtml}
+                                    <span class="task-card-status-tag badge-status ${statusClass}">${status}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    var card = $(cardHtml);
+                    
+                    card.on('click', function(e) {
+                        if ($(e.target).is('button') || 
+                            $(e.target).closest('button').length ||
+                            $(e.target).closest('.task-card-actions').length ||
+                            $(e.target).closest('.multi-action').length ||
+                            $(e.target).closest('form').length ||
+                            $(e.target).closest('.task-card-work-timer').length) {
+                            return;
+                        }
+                        showTaskTimeline(parseInt(taskId));
+                    });
+                    
+                    card.find('button').on('click', function(e) {
+                        e.stopPropagation();
+                    });
+                    
+                    card.find('.multi-action-trigger').on('click', function(e) {
+                        e.stopPropagation();
+                        var cardTaskId = $(this).closest('.task-card').data('task-id');
+                        if (cardTaskId) {
+                            toggleMultiActionCard(cardTaskId, e);
+                        }
+                    });
+                    
+                    gridContainer.append(card);
+                });
+                
+                console.log('Generated ' + rowCount + ' cards');
+                
+                setTimeout(function() {
+                    table.rows({search: 'applied'}).every(function() {
+                        var row = this.node();
+                        var taskId = $(row).attr('data-task-id') || $(row).data('task-id');
+                        if (!taskId) {
+                            var workBtnId = $(row).find('.work-start-btn').attr('id');
+                            if (workBtnId) {
+                                taskId = workBtnId.replace('workBtn', '');
+                            }
+                        }
+                        if (taskId) {
+                            loadWorkStatusCard(taskId);
+                        }
+                    });
+                }, 100);
+            } catch (error) {
+                console.error('Error generating card grid view:', error);
+                showErrorMessage('Error loading grid view: ' + error.message);
+            }
+        }
+
+        // Separate function for card multi-action
+        function toggleMultiActionCard(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const multiAction = document.getElementById(`multiActionCard${taskId}`);
+            if (!multiAction) {
+                console.warn('Multi-action not found for card task:', taskId);
+                return;
+            }
+            
+            const trigger = multiAction.querySelector('.multi-action-trigger');
+            if (!trigger) {
+                console.warn('Trigger not found for card task:', taskId);
+                return;
+            }
+            
+            const allMultiActions = document.querySelectorAll('.multi-action');
+
+            allMultiActions.forEach(ma => {
+                if (ma.id !== `multiAction${taskId}` && ma.id !== `multiActionCard${taskId}`) {
+                    ma.classList.remove('is-active');
+                    const otherTrigger = ma.querySelector('.multi-action-trigger');
+                    if (otherTrigger) otherTrigger.classList.remove('is-active');
+                }
+            });
+
+            multiAction.classList.toggle('is-active');
+            trigger.classList.toggle('is-active');
+        }
+
+        // Close multi-action menus when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.multi-action') && 
+                !e.target.closest('.task-card-actions') && 
+                !e.target.closest('.btn-multi-action') &&
+                !e.target.closest('.multi-action-trigger')) {
+                document.querySelectorAll('.multi-action').forEach(ma => {
+                    ma.classList.remove('is-active');
+                    const trigger = ma.querySelector('.multi-action-trigger');
+                    if (trigger) trigger.classList.remove('is-active');
+                });
+            }
+        });
+
+        // Critical Task Toggle
+        function toggleCriticalTask(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            const multiActionCard = document.getElementById(`multiActionCard${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            if (multiActionCard) {
+                multiActionCard.classList.remove('is-active');
+                const triggerCard = multiActionCard.querySelector('.multi-action-trigger');
+                if (triggerCard) triggerCard.classList.remove('is-active');
+            }
+            fetch(`/critical-tasks/${taskId}/toggle`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                window.location.reload();
+            })
+            .catch(error => {
+                console.error('Critical task error:', error);
+                showErrorMessage('Failed to update critical task. Please try again.');
+            });
+        }
+
+        // Complete Task
+        function completeTask(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            const multiActionCard = document.getElementById(`multiActionCard${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            if (multiActionCard) {
+                multiActionCard.classList.remove('is-active');
+                const triggerCard = multiActionCard.querySelector('.multi-action-trigger');
+                if (triggerCard) triggerCard.classList.remove('is-active');
+            }
+            fetch(`/tasks/${taskId}/complete`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    stopWorkTimer(taskId);
+                    loadWorkStatus(taskId);
+                    loadWorkStatusCard(taskId);
+                    updateStatsCards();
+                    showSuccessMessage(data.message || 'Task completed successfully!');
+                } else {
+                    showErrorMessage(data.message || 'Failed to complete task. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Complete task error:', error);
+                showErrorMessage('Failed to complete task. Please try again.');
+            });
+        }
+
+        function incompleteTask(taskId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const multiAction = document.getElementById(`multiAction${taskId}`);
+            const multiActionCard = document.getElementById(`multiActionCard${taskId}`);
+            if (multiAction) {
+                multiAction.classList.remove('is-active');
+                const trigger = multiAction.querySelector('.multi-action-trigger');
+                if (trigger) trigger.classList.remove('is-active');
+            }
+            if (multiActionCard) {
+                multiActionCard.classList.remove('is-active');
+                const triggerCard = multiActionCard.querySelector('.multi-action-trigger');
+                if (triggerCard) triggerCard.classList.remove('is-active');
+            }
+            fetch(`/tasks/${taskId}/incomplete`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    loadWorkStatus(taskId);
+                    loadWorkStatusCard(taskId);
+                    updateStatsCards();
+                    showSuccessMessage(data.message || 'Task marked as incomplete successfully!');
+                } else {
+                    showErrorMessage(data.message || 'Failed to mark task as incomplete. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Incomplete task error:', error);
+                showErrorMessage('Failed to mark task as incomplete. Please try again.');
+            });
+        }
+
+        function loadWorkStatusCard(taskId) {
+            fetch(`/tasks/${taskId}/work/status`)
+                .then(response => response.json())
+                .then(data => {
+                    const btn = document.getElementById(`workBtnCard${taskId}`);
+                    const timer = document.getElementById(`workTimerCard${taskId}`);
+                    
+                    if (btn && timer) {
+                        updateWorkButton(btn, timer, taskId, data);
+                    }
+                })
+                .catch(error => console.error('Work status error:', error));
+        }
+
+        function updateWorkButton(btn, timer, taskId, data) {
+            if (!btn || !timer) return;
+
+            if (data.is_completed) {
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Completed';
+                btn.style.background = '#10b981';
+                btn.onclick = (e) => { e.stopPropagation(); };
+                btn.style.cursor = 'default';
+                stopWorkTimer(taskId);
+                timer.textContent = formatTime(data.total_seconds);
+            } else if (data.is_running) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
+                btn.style.background = '#3b82f6';
+                btn.onclick = (e) => { e.stopPropagation(); pauseWork(taskId, e); };
+                btn.style.cursor = 'pointer';
+                
+                if (data.started_at) {
+                    const startTime = new Date(data.started_at);
+                    const baseSeconds = data.total_seconds - Math.floor((new Date() - startTime) / 1000);
+                    updateWorkTimer(taskId, data.started_at, Math.max(0, baseSeconds));
+                }
+            } else if (data.is_being_worked_by_other) {
+                // Another user is working on this task - show Working button (disabled) for regular users
+                const userName = data.working_user_name || 'Another user';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
+                btn.style.background = '#3b82f6';
+                btn.title = `Being worked on by ${userName}`;
+                btn.onclick = (e) => { 
+                    e.stopPropagation(); 
+                    showErrorMessage(`This task is currently being worked on by ${userName}. Please wait for them to finish.`);
+                };
+                btn.style.cursor = 'not-allowed';
+                stopWorkTimer(taskId);
+                timer.textContent = formatTime(data.total_seconds || 0);
+            } else if (data.is_paused) {
+                // Work is paused - show Resume button (only for regular users, not admin/super admin)
+                if (data.is_admin) {
+                    // Admin/Super Admin: Don't show start/resume button if they didn't start it
+                    btn.innerHTML = '<i class="fas fa-info-circle"></i> Info';
+                    btn.style.background = '#94a3b8';
+                    btn.title = 'Work is paused by another user';
+                    btn.onclick = (e) => { e.stopPropagation(); };
+                    btn.style.cursor = 'default';
+                } else {
+                    btn.innerHTML = '<i class="fas fa-play"></i> Resume';
+                    btn.style.background = '#10b981';
+                    btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
+                    btn.style.cursor = 'pointer';
+                }
+                stopWorkTimer(taskId);
+                timer.textContent = formatTime(data.total_seconds);
+            } else {
+                // No work session
+                if (data.is_admin) {
+                    // Admin/Super Admin: Don't show Start button - they can only view working status
+                    if (data.working_user_name) {
+                        // Someone else is working - show Working status
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working';
+                        btn.style.background = '#3b82f6';
+                        btn.title = `Being worked on by ${data.working_user_name}`;
+                        btn.onclick = (e) => { e.stopPropagation(); };
+                        btn.style.cursor = 'default';
+                    } else {
+                        // No one working - hide button or show disabled state
+                        btn.innerHTML = '<i class="fas fa-info-circle"></i> Info';
+                        btn.style.background = '#94a3b8';
+                        btn.title = 'No active work session';
+                        btn.onclick = (e) => { e.stopPropagation(); };
+                        btn.style.cursor = 'default';
+                    }
+                } else {
+                    // Regular user - show Start button
+                    btn.innerHTML = '<i class="fas fa-play"></i> Start';
+                    btn.style.background = '#10b981';
+                    btn.onclick = (e) => { e.stopPropagation(); startWork(taskId, e); };
+                    btn.style.cursor = 'pointer';
+                }
+                stopWorkTimer(taskId);
+                timer.textContent = formatTime(data.total_seconds);
+            }
+        }
+
+        function updateWorkTimer(taskId, startTime, baseSeconds = 0) {
+            const timerElement = document.getElementById(`workTimer${taskId}`);
+            const timerCardElement = document.getElementById(`workTimerCard${taskId}`);
+            
+            if (!timerElement && !timerCardElement) return;
+
+            const update = () => {
+                const now = new Date();
+                const start = new Date(startTime);
+                const elapsed = Math.floor((now - start) / 1000);
+                const total = baseSeconds + elapsed;
+                const formattedTime = formatTime(total);
+                
+                if (timerElement) timerElement.textContent = formattedTime;
+                if (timerCardElement) timerCardElement.textContent = formattedTime;
+            };
+
+            update();
+            workTimers[taskId] = setInterval(update, 1000);
+        }
+
+        function startWork(taskId, event) {
+            if (event) event.stopPropagation();
+            fetch(`/tasks/${taskId}/work/start`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    loadWorkStatus(taskId);
+                    loadWorkStatusCard(taskId);
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    if (data.paused_tasks && data.paused_tasks.length > 0) {
+                        data.paused_tasks.forEach(pausedTaskId => {
+                            loadWorkStatus(pausedTaskId);
+                            loadWorkStatusCard(pausedTaskId);
+                            updateStatusBadge(pausedTaskId, 'on_hold');
+                        });
+                    }
+                    updateStatsCards();
+                    showSuccessMessage(data.message || 'Work started!');
+                } else {
+                    showErrorMessage(data.message || 'Failed to start work');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showErrorMessage('Failed to start work');
+            });
+        }
+
+        function pauseWork(taskId, event) {
+            if (event) event.stopPropagation();
+            
+            fetch(`/tasks/${taskId}/work/pause`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    stopWorkTimer(taskId);
+                    loadWorkStatus(taskId);
+                    loadWorkStatusCard(taskId);
+                    if (data.status) {
+                        updateStatusBadge(taskId, data.status);
+                    }
+                    updateStatsCards();
+                    showSuccessMessage('Work paused!');
+                } else {
+                    showErrorMessage(data.message || 'Failed to pause work');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showErrorMessage('Failed to pause work');
+            });
+        }
+
+        function loadWorkStatus(taskId) {
+            fetch(`/tasks/${taskId}/work/status`)
+                .then(response => response.json())
+                .then(data => {
+                    const btn = document.getElementById(`workBtn${taskId}`);
+                    const timer = document.getElementById(`workTimer${taskId}`);
+                    
+                    if (btn && timer) {
+                        updateWorkButton(btn, timer, taskId, data);
+                    }
+                    
+                    loadWorkStatusCard(taskId);
+                })
+                .catch(error => console.error('Work status error:', error));
+        }
+
+        // Font Size Controls
+        function decreaseFontSize() {
+            var currentSize = parseFloat($('.task-table').css('font-size'));
+            if (currentSize > 10) {
+                $('.task-table').css('font-size', (currentSize - 1) + 'px');
+                localStorage.setItem('tableFontSize', (currentSize - 1) + 'px');
+            }
+        }
+
+        function increaseFontSize() {
+            var currentSize = parseFloat($('.task-table').css('font-size'));
+            if (currentSize < 20) {
+                $('.task-table').css('font-size', (currentSize + 1) + 'px');
+                localStorage.setItem('tableFontSize', (currentSize + 1) + 'px');
+            }
+        }
+
+        // Toggle Text Wrap
+        function toggleTextWrap() {
+            textWrapEnabled = !textWrapEnabled;
+            var table = $('#tasksTable');
+
+            if (textWrapEnabled) {
+                table.addClass('text-wrap-enabled');
+                table.find('td, th').css('white-space', 'normal');
+                $('#textWrapBtn').addClass('active');
+                localStorage.setItem('taskManager_textWrap', 'enabled');
+                showSuccessMessage('Text wrap enabled');
+            } else {
+                table.removeClass('text-wrap-enabled');
+                table.find('td, th').css('white-space', 'nowrap');
+                $('#textWrapBtn').removeClass('active');
+                localStorage.setItem('taskManager_textWrap', 'disabled');
+                showSuccessMessage('Text wrap disabled');
+            }
+        }
+
+        // Load saved preferences from localStorage
+        function loadSavedPreferences() {
+            var savedWrap = localStorage.getItem('taskManager_textWrap');
+            if (savedWrap === 'enabled') {
+                textWrapEnabled = true;
+                var table = $('#tasksTable');
+                table.addClass('text-wrap-enabled');
+                table.find('td, th').css('white-space', 'normal');
+                $('#textWrapBtn').addClass('active');
+            }
+            
+            var savedView = localStorage.getItem('taskManager_viewMode');
+            if (savedView === 'grid') {
+                setTimeout(function() {
+                    isGridView = true;
+                    toggleGridView();
+                }, 500);
+            }
+        }
+
+        // Load preferences on page load
+        $(document).ready(function() {
+            setTimeout(function() {
+                loadSavedPreferences();
+            }, 300);
+        });
+    </script>
 </body>
 </html>
 

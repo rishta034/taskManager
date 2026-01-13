@@ -18,6 +18,9 @@ class TrashController extends Controller
             abort(403, 'Only Super Admin can access trash.');
         }
         
+        // onlyTrashed() shows only soft-deleted tasks
+        // These are tasks deleted by superadmin and are hidden from all users, admins, and superadmins
+        // They only appear in this trash view
         $query = Task::onlyTrashed()->with(['user', 'organization', 'employee.user', 'employee.department']);
         $tasks = $query->latest('deleted_at')->paginate(10);
         $organizations = MasterOrganization::orderBy('name')->get();
@@ -34,6 +37,9 @@ class TrashController extends Controller
         }
 
         $task = Task::onlyTrashed()->findOrFail($id);
+        
+        // Restore: This will make the task visible again to all users based on their roles
+        // The task will appear in normal task listings after restoration
         $task->restore();
 
         return redirect()->route('trash.index')->with('success', 'Task restored successfully!');
@@ -47,6 +53,10 @@ class TrashController extends Controller
         }
 
         $task = Task::onlyTrashed()->findOrFail($id);
+        
+        // Permanently delete: This will remove the task from database completely
+        // After forceDelete, the task will be removed permanently from all users, admins, and superadmins
+        // This cannot be undone
         $task->forceDelete();
 
         return redirect()->route('trash.index')->with('success', 'Task permanently deleted!');
