@@ -95,7 +95,9 @@ class TaskController extends Controller
             'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(),
         ];
         
-        return view('dashboard', compact('tasks', 'stats', 'organizations', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions'));
+        $currentEmployee = Employee::where('user_id', $user->id)->first();
+
+        return view('dashboard', compact('tasks', 'stats', 'organizations', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions', 'currentEmployee'));
     }
 
     public function getStats()
@@ -131,11 +133,7 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
-        // Only Admin and Super Admin can create tasks
         $user = auth()->user();
-        if ($user->isUser()) {
-            abort(403, 'You do not have permission to create tasks.');
-        }
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -145,16 +143,25 @@ class TaskController extends Controller
             'due_date' => 'nullable|date',
             'organization_id' => 'nullable|exists:master_organization,id',
             'visible_to_admin' => 'nullable|boolean',
+            'employee_id' => 'prohibited',
         ]);
 
-        $validated['user_id'] = auth()->id() ?? 1; // Default to user 1 if no auth
-        $validated['assigned_by'] = auth()->id(); // Set assigned_by to current user (task creator)
-        
-        // Only super admin can set visible_to_admin
-        if (!$user->isSuperAdmin()) {
-            $validated['visible_to_admin'] = true; // Default to visible
+        $validated['user_id'] = $user->id;
+        $validated['assigned_by'] = $user->id;
+
+        if ($user->isUser()) {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if (!$employee) {
+                abort(403, 'You must have an employee profile to create tasks.');
+            }
+
+            // Users can only create tasks assigned to themselves
+            $validated['employee_id'] = $employee->id;
+            $validated['visible_to_admin'] = true;
+        } elseif (!$user->isSuperAdmin()) {
+            $validated['visible_to_admin'] = true;
         } else {
-            $validated['visible_to_admin'] = $request->has('visible_to_admin') ? (bool)$request->visible_to_admin : true;
+            $validated['visible_to_admin'] = $request->has('visible_to_admin') ? (bool) $request->visible_to_admin : true;
         }
 
         $task = Task::create($validated);
@@ -379,7 +386,9 @@ class TaskController extends Controller
             'on_hold' => (clone $statsQuery)->where('status', 'on_hold')->count(),
         ];
         
-        return view('organization-dashboard', compact('tasks', 'stats', 'organizations', 'organization', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions'));
+        $currentEmployee = Employee::where('user_id', $user->id)->first();
+        
+        return view('organization-dashboard', compact('tasks', 'stats', 'organizations', 'organization', 'employees', 'criticalTaskIds', 'criticalTaskCount', 'unreadNotificationCount', 'trashCount', 'tasksWithWorkSessions', 'currentEmployee'));
     }
 
     public function getOrganizationStats($organizationId)

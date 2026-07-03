@@ -207,6 +207,13 @@
                         Add New Task
                     </button>
                 </div>
+                @elseif(auth()->user()->isUser() && isset($currentEmployee) && $currentEmployee)
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="openModal()">
+                        <i class="fas fa-plus"></i>
+                        Add My Task
+                    </button>
+                </div>
                 @endif
             </div>
 
@@ -445,6 +452,17 @@
                     <i class="fas fa-clipboard-list" style="font-size: 100px; color: #94a3b8; opacity: 0.5;"></i>
                     <h3>No tasks yet</h3>
                     <p>Get started by creating your first task!</p>
+                    @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
+                    <button class="btn btn-primary" onclick="openModal()" style="margin-top: 16px;">
+                        <i class="fas fa-plus"></i>
+                        Add New Task
+                    </button>
+                    @elseif(auth()->user()->isUser() && isset($currentEmployee) && $currentEmployee)
+                    <button class="btn btn-primary" onclick="openModal()" style="margin-top: 16px;">
+                        <i class="fas fa-plus"></i>
+                        Add My Task
+                    </button>
+                    @endif
                 </div>
                 @endif
             </div>
@@ -505,13 +523,21 @@
         <div class="modal-content">
             <div class="modal-header">
                  <i class="fas fa-tasks" style="font-size: 50px; color: #6366f1;"></i>
-                <h3 class="modal-title" id="modalTitle">Add New Task</h3>
+                <h3 class="modal-title" id="modalTitle">{{ auth()->user()->isUser() ? 'Add My Task' : 'Add New Task' }}</h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
             <form id="taskForm" method="POST">
                 @csrf
                 <input type="hidden" name="_method" id="formMethod" value="POST">
                 
+                @if(auth()->user()->isUser() && isset($currentEmployee) && $currentEmployee)
+                <div class="form-group">
+                    <label class="form-label">Assigned To</label>
+                    <input type="text" class="form-input" value="{{ $currentEmployee->full_name }}" readonly style="background: var(--bg-tertiary); cursor: not-allowed;">
+                    <p style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">Personal tasks are always assigned to you.</p>
+                </div>
+                @endif
+
                 <div class="form-group">
                     <label class="form-label">Task Title *</label>
                     <input type="text" name="title" class="form-input" id="taskTitle" required>
@@ -545,6 +571,7 @@
                     </select>
                 </div>
 
+                @if(!auth()->user()->isUser())
                 <div class="form-group">
                     <label class="form-label">Organization</label>
                     <select name="organization_id" class="form-select" id="taskOrganization">
@@ -554,6 +581,7 @@
                         @endforeach
                     </select>
                 </div>
+                @endif
 
                 <div class="form-group">
                     <label class="form-label">Due Date</label>
@@ -603,7 +631,10 @@
                         document.getElementById('taskDescription').value = data.description || '';
                         document.getElementById('taskStatus').value = data.status || 'not_started';
                         document.getElementById('taskPriority').value = data.priority || 'medium';
-                        document.getElementById('taskOrganization').value = data.organization_id || '';
+                        const orgField = document.getElementById('taskOrganization');
+                        if (orgField) {
+                            orgField.value = data.organization_id || '';
+                        }
                         document.getElementById('taskDueDate').value = data.due_date || '';
                         
                         // Set visibility radio button for super admin
@@ -621,11 +652,14 @@
                     })
                     .catch(error => console.error('Error:', error));
             } else {
-                modalTitle.textContent = 'Add New Task';
+                modalTitle.textContent = @json(auth()->user()->isUser() ? 'Add My Task' : 'Add New Task');
                 form.action = '/tasks';
                 document.getElementById('formMethod').value = 'POST';
                 form.reset();
-                document.getElementById('taskOrganization').value = '';
+                const orgField = document.getElementById('taskOrganization');
+                if (orgField) {
+                    orgField.value = '';
+                }
             }
             
             modal.classList.add('active');
