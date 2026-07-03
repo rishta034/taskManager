@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Task Manager Dashboard</title>
+    <title>Employee Tasks - Task Manager</title>
     <link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -36,7 +36,7 @@
                     <span>Employees</span>
                 </a>
                 <a href="{{ route('employee.tasks') }}" class="menu-item {{ request()->routeIs('employee.tasks') ? 'active' : '' }}">
-                    <i class="fas fa-tasks"></i>
+                    <i class="fas fa-user-tasks"></i>
                     <span>Employee Tasks</span>
                 </a>
                 @endif
@@ -209,7 +209,7 @@
         <!-- Main Content -->
         <main class="main-content">
             <div class="header">
-                <h1>Dashboard</h1>
+                <h1>Employee Tasks</h1>
                 @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
                 <div class="header-actions">
                     <button class="btn btn-primary" onclick="openModal()">
@@ -217,16 +217,51 @@
                         Add New Task
                     </button>
                 </div>
-                @elseif(auth()->user()->isUser() && isset($currentEmployee) && $currentEmployee)
-                <div class="header-actions">
-                    <button class="btn btn-primary" onclick="openModal()">
-                        <i class="fas fa-plus"></i>
-                        Add My Task
-                    </button>
-                </div>
                 @endif
             </div>
 
+            <!-- Employee Selector -->
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: var(--shadow-card); border: 1px solid var(--border-color);">
+                <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <label for="employeeSelect" style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-primary); font-size: 14px;">
+                            <i class="fas fa-user"></i> Select Employee
+                        </label>
+                        <select id="employeeSelect" name="employee_id" class="form-select" style="width: 100%; padding: 10px 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; cursor: pointer; transition: all 0.3s ease;" onchange="filterByEmployee(this.value)">
+                            <option value="">-- Select an Employee --</option>
+                            @foreach($employees as $employee)
+                                <option value="{{ $employee->id }}" {{ $selectedEmployeeId == $employee->id ? 'selected' : '' }}>
+                                    {{ $employee->full_name }} 
+                                    @if($employee->user)
+                                        ({{ $employee->user->email }})
+                                    @endif
+                                    @if($employee->department)
+                                        - {{ $employee->department->name }}
+                                    @endif
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    @if($selectedEmployee)
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--accent-primary-gradient); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 16px;">
+                            {{ strtoupper(substr($selectedEmployee->full_name, 0, 1)) }}
+                        </div>
+                        <div>
+                            <div style="font-weight: 600; color: var(--text-primary); font-size: 14px;">{{ $selectedEmployee->full_name }}</div>
+                            <div style="font-size: 12px; color: var(--text-secondary);">
+                                @if($selectedEmployee->department)
+                                    <i class="fas fa-building"></i> {{ $selectedEmployee->department->name }}
+                                @endif
+                                @if($selectedEmployee->user)
+                                    <span style="margin-left: 8px;"><i class="fas fa-envelope"></i> {{ $selectedEmployee->user->email }}</span>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                    @endif
+                </div>
+            </div>
 
             <!-- Stats Cards -->
             <div class="stats-grid">
@@ -322,15 +357,8 @@
                     <div class="header-content">
                         <div class="header-left">
                             <h2 class="dashboard-title">
-                                @if(request()->has('employee_id') && request()->employee_id)
-                                    @php
-                                        $filteredEmployee = \App\Models\Employee::with('user')->find(request()->employee_id);
-                                    @endphp
-                                    @if($filteredEmployee)
-                                        Tasks for {{ $filteredEmployee->user->name ?? ($filteredEmployee->first_name . ' ' . $filteredEmployee->last_name) }}
-                                    @else
-                                        Task Manager Dashboard
-                                    @endif
+                                @if($selectedEmployee)
+                                    Tasks for {{ $selectedEmployee->full_name }}
                                 @elseif(request()->has('filter') && request()->filter)
                                     @php
                                         $filterLabels = [
@@ -343,9 +371,9 @@
                                         ];
                                         $currentFilter = request()->filter;
                                     @endphp
-                                    {{ $filterLabels[$currentFilter] ?? 'Task Manager Dashboard' }}
+                                    {{ $filterLabels[$currentFilter] ?? 'Employee Tasks' }}
                                 @else
-                                    Task Manager Dashboard
+                                    Employee Tasks - Select an employee to view tasks
                                 @endif
                             </h2>
                             <p class="dashboard-subtitle">Click to sort • Filter and search • Pagination enabled</p>
@@ -555,17 +583,6 @@
                     <i class="fas fa-clipboard-list" style="font-size: 70px; color: #94a3b8; opacity: 0.5;"></i>
                     <h3>No tasks yet</h3>
                     <p>Get started by creating your first task!</p>
-                    @if(auth()->user()->isAdmin() || auth()->user()->isSuperAdmin())
-                    <button class="btn btn-primary" onclick="openModal()" style="margin-top: 16px;">
-                        <i class="fas fa-plus"></i>
-                        Add New Task
-                    </button>
-                    @elseif(auth()->user()->isUser() && isset($currentEmployee) && $currentEmployee)
-                    <button class="btn btn-primary" onclick="openModal()" style="margin-top: 16px;">
-                        <i class="fas fa-plus"></i>
-                        Add My Task
-                    </button>
-                    @endif
                 </div>
                 @endif
             </div>
@@ -627,21 +644,13 @@
         <div class="modal-content">
             <div class="modal-header">
                  <i class="fas fa-tasks" style="font-size: 50px; color: #6366f1;"></i>
-                <h3 class="modal-title" id="modalTitle">{{ auth()->user()->isUser() ? 'Add My Task' : 'Add New Task' }}</h3>
+                <h3 class="modal-title" id="modalTitle">Add New Task</h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
             <form id="taskForm" method="POST">
                 @csrf
                 <input type="hidden" name="_method" id="formMethod" value="POST">
                 
-                @if(auth()->user()->isUser() && isset($currentEmployee) && $currentEmployee)
-                <div class="form-group">
-                    <label class="form-label">Assigned To</label>
-                    <input type="text" class="form-input" value="{{ $currentEmployee->full_name }}" readonly style="background: var(--bg-tertiary); cursor: not-allowed;">
-                    <p style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">Personal tasks are always assigned to you.</p>
-                </div>
-                @endif
-
                 <div class="form-group">
                     <label class="form-label">Task Title *</label>
                     <input type="text" name="title" class="form-input" id="taskTitle" required>
@@ -675,7 +684,6 @@
                     </select>
                 </div>
 
-                @if(!auth()->user()->isUser())
                 <div class="form-group">
                     <label class="form-label">Organization</label>
                     <select name="organization_id" class="form-select" id="taskOrganization">
@@ -685,7 +693,6 @@
                         @endforeach
                     </select>
                 </div>
-                @endif
 
                 <div class="form-group">
                     <label class="form-label">Due Date</label>
@@ -735,10 +742,7 @@
                         document.getElementById('taskDescription').value = data.description || '';
                         document.getElementById('taskStatus').value = data.status || 'not_started';
                         document.getElementById('taskPriority').value = data.priority || 'medium';
-                        const orgField = document.getElementById('taskOrganization');
-                        if (orgField) {
-                            orgField.value = data.organization_id || '';
-                        }
+                        document.getElementById('taskOrganization').value = data.organization_id || '';
                         document.getElementById('taskDueDate').value = data.due_date || '';
                         
                         // Set visibility radio button for super admin
@@ -756,14 +760,11 @@
                     })
                     .catch(error => console.error('Error:', error));
             } else {
-                modalTitle.textContent = @json(auth()->user()->isUser() ? 'Add My Task' : 'Add New Task');
+                modalTitle.textContent = 'Add New Task';
                 form.action = '/tasks';
                 document.getElementById('formMethod').value = 'POST';
                 form.reset();
-                const orgField = document.getElementById('taskOrganization');
-                if (orgField) {
-                    orgField.value = '';
-                }
+                document.getElementById('taskOrganization').value = '';
             }
             
             modal.classList.add('active');
@@ -2007,16 +2008,42 @@
         }
 
         // Filter tasks by stat card click
+        function filterByEmployee(employeeId) {
+            if (!employeeId) {
+                // If no employee selected, redirect to employee tasks page without employee_id
+                window.location.href = '{{ route("employee.tasks") }}';
+                return;
+            }
+            
+            // Get current filter if any
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentFilter = urlParams.get('filter') || '';
+            
+            // Build new URL with employee_id
+            let newUrl = '{{ route("employee.tasks") }}?employee_id=' + employeeId;
+            if (currentFilter) {
+                newUrl += '&filter=' + currentFilter;
+            }
+            
+            // Redirect to new URL
+            window.location.href = newUrl;
+        }
+
         function filterTasks(filterType) {
             const currentUrl = new URL(window.location.href);
+            const employeeId = currentUrl.searchParams.get('employee_id');
             
-            // Remove existing filter and employee_id params
+            // Remove existing filter but keep employee_id
             currentUrl.searchParams.delete('filter');
-            currentUrl.searchParams.delete('employee_id');
             
             // Add new filter if not 'all'
             if (filterType !== 'all') {
                 currentUrl.searchParams.set('filter', filterType);
+            }
+            
+            // Ensure employee_id is preserved
+            if (employeeId) {
+                currentUrl.searchParams.set('employee_id', employeeId);
             }
             
             // Redirect to filtered URL
